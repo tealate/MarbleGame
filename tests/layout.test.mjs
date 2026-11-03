@@ -20,9 +20,9 @@ test('1080×1920 is divided 3:4:3 with two 540×576 team areas', () => {
 
 test('default devices, starts, pins and slots fit inside their local areas', () => {
   const layout = createMarbleLayout(marbleConfig);
-  assert.equal(layout.upper.slots.length, 4);
+  assert.equal(layout.upper.slots.length, 13);
   assert.equal(layout.lower.slots.length, 5);
-  assert.equal(layout.pins.length, 49);
+  assert.equal(layout.pins.length, 67);
   assert.equal(540 - layout.lower.bounds.width, 8, 'central gap is 8px');
   assert.equal(layout.lower.bounds.y + layout.lower.bounds.height, 576, 'device reaches screen bottom');
   assert.equal(layout.pinFlow.spawnY + layout.pinFlow.radius, layout.lower.bounds.height - 6);
@@ -78,7 +78,7 @@ test('dimensions, openings, slots, starts and pin settings change generated geom
   assert.equal(layout.upper.bounds.width, 480);
   assert.equal(layout.upper.walls[0].height, 8);
   assert.equal(layout.upper.start.x, 95);
-  assert.equal(layout.upper.slots.length, 5);
+  assert.equal(layout.upper.slots.length, 14);
   assert.equal(layout.upper.slots[0].width, 80);
   assert.equal(layout.upper.slots[0].height, 30);
   assert.equal(layout.upper.slots[0].openingWidth, 18);
@@ -128,4 +128,41 @@ test('open result bands cover the floor with no plates, even after resizing', ()
   });
   const last = lower.slots.at(-1);
   assert.ok(Math.abs(last.x + last.width - (lower.bounds.width - lower.wallThickness)) < 1e-8);
+});
+
+
+test('bowl row meets both walls and staggered pins fill the edges', () => {
+  const l = createMarbleLayout(marbleConfig);
+  assert.equal(marbleConfig.upper.row.entrance, 'bowl');
+  assert.equal(l.upper.slots[0].x, l.upper.wallThickness);
+  const last = l.upper.slots.at(-1);
+  assert.ok(Math.abs(last.x + last.width - (l.upper.bounds.width - l.upper.wallThickness)) < 1e-8);
+  for (const slot of l.upper.slots) assert.ok(slot.solids[0][1].y > slot.solids[0][0].y);
+  for (const m of l.mountains) {
+    const overlap = m.position.y + m.height / 2 - l.upper.slots[0].y;
+    assert.equal(overlap, 6);
+    assert.ok(overlap <= l.mountainOverlap);
+  }
+  const xs = l.pins.map(p => p.x);
+  assert.equal(Math.min(...xs), 35);
+  assert.equal(Math.max(...xs), 497);
+  assert.ok(Math.min(...xs) - l.pinFlow.radius - l.lower.wallThickness > 14);
+});
+
+
+test('effect groups generate editable S7 L2 R2 H2 counts with unique slot IDs', async () => {
+  const { createEffectSlots, effectGroups } = await server.ssrLoadModule('/src/config/stage.ts');
+  const slots = createEffectSlots();
+  assert.equal(slots.map(s => s.label).join(''), 'SSSSSSSLLRRHH');
+  assert.equal(new Set(slots.map(s => s.id)).size, 13);
+  assert.deepEqual(effectGroups.map(g => g.color), [0xffe84a, 0x25e4ed, 0xf34de2, 0x48ee68]);
+  const groups = structuredClone(effectGroups); groups[0].count = 4;
+  assert.equal(createEffectSlots(groups).length, 10);
+  const modified = structuredClone(marbleConfig);
+  modified.upper.row.slots = createEffectSlots(groups);
+  modified.upper.row.funnelHeight = 4;
+  modified.upper.row.bowlSegments = 6;
+  const result = createMarbleLayout(modified);
+  assert.equal(result.upper.slots[0].solids.length, 12);
+  assert.equal(result.upper.slots[0].outerEdgeY, -4);
 });

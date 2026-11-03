@@ -23,6 +23,8 @@ function config() {
 }
 function movingConfig() {
   const c = structuredClone(physicsConfig);
+  // Explicitly exercise the optional legacy obstacle system. Default gameplay disables it.
+  c.obstacles.mountains.enabled = true;
   c.spawn.automatic = false;
   return c;
 }
@@ -142,7 +144,7 @@ test('effect once → ×2 → ×2 → deployment with value 4; bodies and collid
   const baseline = sim.teams[0].physics.world.colliders.len();
   const id = sim.spawn('red');
   dropInto(sim, id, 'upper', 1);
-  assert.equal(sim.teams[0].marbles.get(id).effectId, 'effect-b');
+  assert.equal(sim.teams[0].marbles.get(id).effectId, 'straight');
   assert.equal(sim.teams[0].physics.world.bodies.len(), 0, 'warp removes the old body');
   sim.advance(sim.config.simulation.fixedTimeStep);
   const position = sim.teams[0].physics.pose(id);
@@ -154,7 +156,7 @@ test('effect once → ×2 → ×2 → deployment with value 4; bodies and collid
   dropInto(sim, id, 'lower', 1);
   assert.deepEqual(events.map((e) => e.type), ['effect', 'multiplier', 'multiplier', 'deploy']);
   assert.equal(events.at(-1).marble.value, 4);
-  assert.equal(events.at(-1).marble.effectId, 'effect-b');
+  assert.equal(events.at(-1).marble.effectId, 'straight');
   assert.equal(sim.teams[0].marbles.size, 0);
   assert.equal(sim.teams[0].physics.world.bodies.len(), 0);
   assert.equal(sim.teams[0].physics.world.colliders.len(), baseline);
@@ -206,9 +208,9 @@ test('narrowed openings change the real collision geometry and remain passable',
   p.add(1, { x: narrow.upper.bounds.x + slot.x + slot.width / 2, y: narrow.upper.bounds.y + slot.y - 25 }, { x: 0, y: 180 });
   let arrival;
   for (let i = 0; i < 180 && !arrival; i++) arrival = p.step()[0];
-  assert.equal(arrival?.slot.definition.id, 'effect-a');
+  assert.equal(arrival?.slot.definition.id, 'straight-1');
   // A point that was inside the wide opening now belongs to its solid shoulder.
-  const probeX = narrow.upper.bounds.x + slot.x + slot.width / 2 - 18;
+  const probeX = narrow.upper.bounds.x + slot.x + slot.width / 2 - 9.5;
   const probeY = narrow.upper.bounds.y + slot.y + 1;
   let hit = false;
   p.world.intersectionsWithPoint({ x: probeX / p.scale, y: probeY / p.scale }, (collider) => {
@@ -323,7 +325,7 @@ test('flat, funnel and crater entrances share open geometry with functioning sen
       y: geometry.upper.bounds.y + slot.y - slot.funnelHeight - 15 }, { x: 0, y: 180 });
     let result;
     for (let i = 0; i < 180 && !result; i++) result = p.step()[0];
-    assert.equal(result?.slot.definition.id, 'effect-a', entrance);
+    assert.equal(result?.slot.definition.id, 'straight-1', entrance);
   }
 });
 
@@ -351,13 +353,13 @@ test('two narrow needles cross at the center and travel to both edges', (t) => {
   for (let i = 0; i < stepCount * 2; i++) p.step();
   assert.ok(Math.abs(mountains[0].position.x - edges[0]) < 0.01);
   assert.ok(Math.abs(mountains[1].position.x - edges[1]) < 0.01);
-  assert.ok(mountains.every((m) => m.position.x - 9 > layout.upper.bounds.x + layout.upper.wallThickness
-    && m.position.x + 9 < layout.upper.bounds.x + layout.upper.bounds.width - layout.upper.wallThickness));
+  assert.ok(mountains.every((m) => m.position.x >= layout.upper.bounds.x + layout.upper.wallThickness - 0.01
+    && m.position.x <= layout.upper.bounds.x + layout.upper.bounds.width - layout.upper.wallThickness + 0.01));
 });
 
 test('a moving mountain physically pushes a stationary marble', (t) => {
   const c = movingConfig(); c.gravity.y = 0; c.obstacles.pinFlow.enabled = false;
-  const p = world(t, c);
+  const p = world(t, c, { ...layout, upper: { ...layout.upper, slots: [] } });
   const m = layout.mountains[0];
   const start = { x: layout.upper.bounds.x + m.position.x - c.obstacles.mountains.motions[0].amplitude
       + m.width / 2 + c.marble.radius + 2,
@@ -530,7 +532,7 @@ test('speed, period, amplitude, row cadence and shape can be adjusted from confi
   const geometry = createMarbleLayout(stage);
   const p = world(t, c, geometry);
   const mountain = [...p.obstacles.items.values()].find((o) => o.kind === 'mountain');
-  const pin = [...p.obstacles.items.values()].filter((o) => o.kind === 'pin')[5];
+  const pin = [...p.obstacles.items.values()].filter((o) => o.kind === 'pin')[marbleConfig.lower.pins.rowCounts[0]];
   const initialX = mountain.position.x, initialY = pin.position.y;
   assert.equal(mountain.shape.points.length, 3);
   assert.equal(Math.max(...mountain.shape.points.map((v) => v.x)), 30);
@@ -586,4 +588,31 @@ test('Pixi obstacle graphics match shared shapes and poses, and are destroyed wi
       : Math.max(...item.shape.points.map((p) => p.x)) - Math.min(...item.shape.points.map((p) => p.x));
     assert.ok(Math.abs(bounds.width - expectedWidth) < 0.001);
   });
+});
+
+
+test('default bowl stage has no needles and completes effect, reroll and deployment loops', async (t) => {
+  const c = structuredClone(physicsConfig);
+  const { sim, events } = await simulation(t, c);
+  assert.ok(sim.teams.every(team => [...team.physics.obstacles.items.values()].every(o => o.kind !== 'mountain')));
+  advance(sim, 120);
+  for (const team of sim.teams) {
+    assert.ok(team.stats.effects > 20);
+    assert.ok(team.stats.deployed > 10);
+    assert.ok(team.stats.multipliers > 10);
+  }
+  assert.equal(events.filter(e => e.reason === 'out-of-bounds').length, 0);
+});
+
+test('balls roll down the shared bowl shoulders into effect sensors', (t) => {
+  const p = world(t, config(), { ...layout, pins: [] });
+  for (const [i, slot] of layout.upper.slots.entries()) {
+    p.add(i + 1, { x: layout.upper.bounds.x + slot.x + 7,
+      y: layout.upper.bounds.y + slot.y - slot.funnelHeight - 16 }, { x: 0, y: 0 });
+    let found;
+    for (let step = 0; step < 600 && !found; step++) found = p.step().find(a => a.marbleId === i + 1);
+    assert.ok(found, slot.definition.id);
+    assert.equal(found.stage, 'upper');
+    p.remove(i + 1);
+  }
 });

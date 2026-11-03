@@ -28,6 +28,7 @@ export interface MarbleLayout {
   upper: DeviceLayout;
   lower: DeviceLayout;
   pins: (Point & { radius: number })[];
+  mountainOverlap: number;
   mountains: { id: string; position: Point; points: Point[]; width: number; height: number }[];
   pinFlow: { spawnY: number; despawnY: number; spacingY: number; radius: number; rows: number[][] };
 }
@@ -75,7 +76,7 @@ function createDevice(config: DeviceConfig): DeviceLayout {
       box(0, slotHeight - thickness, slotWidth, thickness),
     ];
     const slopeHeight = row.entrance === 'flat' || open ? 0 : row.funnelHeight;
-    const outerEdgeY = row.entrance === 'funnel' ? -slopeHeight : 0;
+    const outerEdgeY = (row.entrance === 'funnel' || row.entrance === 'bowl') ? -slopeHeight : 0;
     const innerEdgeY = row.entrance === 'crater' ? -slopeHeight : 0;
     if (left > 0) solids.push(
       [{ x: 0, y: outerEdgeY }, { x: left, y: innerEdgeY },
@@ -83,13 +84,31 @@ function createDevice(config: DeviceConfig): DeviceLayout {
       [{ x: right, y: innerEdgeY }, { x: slotWidth, y: outerEdgeY },
         { x: slotWidth, y: thickness }, { x: right, y: thickness }],
     );
+    if (row.entrance === 'bowl') {
+      const segments = row.bowlSegments ?? 8;
+      if (!Number.isInteger(segments) || segments < 2 || segments > 32) throw new Error('bowlSegments must be 2..32');
+      solids.length = 0;
+      // Smoothstep shoulders: horizontal tangents at the shared rim and mouth.
+      // Each convex strip is used unchanged by Pixi and Rapier.
+      for (let i = 0; i < segments; i++) {
+        const a = i / segments, b = (i + 1) / segments;
+        const surface = (t: number) => (-slopeHeight * (1 - t * t * (3 - 2 * t))) || 0;
+        const x1 = left * a, x2 = left * b;
+        const y1 = surface(a), y2 = surface(b);
+        if (left > 0) {
+          solids.push([{ x: x1, y: y1 }, { x: x2, y: y2 }, { x: x2, y: slotHeight }, { x: x1, y: slotHeight }]);
+          solids.push([{ x: slotWidth - x2, y: y2 }, { x: slotWidth - x1, y: y1 },
+            { x: slotWidth - x1, y: slotHeight }, { x: slotWidth - x2, y: slotHeight }]);
+        }
+      }
+    }
     if (slotHeight <= 2 * thickness) throw new Error(`Slot too shallow: ${definition.id}`);
     const slot = {
       definition, x: nextX, y: height - wall - slotHeight,
       width: slotWidth, height: slotHeight, openingWidth, funnelHeight: slopeHeight, outerEdgeY,
       solids: open ? [] : solids,
       sensor: open ? { x: 0, y: 0, width: slotWidth, height: slotHeight }
-        : { x: left, y: thickness, width: openingWidth, height: slotHeight - 2 * thickness },
+        : { x: left, y: row.entrance === 'bowl' ? 0 : thickness, width: openingWidth, height: slotHeight - 2 * thickness },
     };
     nextX += slotWidth + row.gap;
     return slot;
@@ -144,6 +163,7 @@ export function createMarbleLayout(config: MarbleConfig): MarbleLayout {
     lower: createDevice(config.lower),
     pins: positions.map((point) => ({ ...point, radius: pins.radius })),
     mountains,
+    mountainOverlap: config.upper.mountainOverlap,
     pinFlow: {
       spawnY: pins.spawnY ?? config.lower.height - config.lower.wallThickness - pins.radius - pins.spawnBottomInset,
       despawnY: pins.despawnY, spacingY: pins.spacingY, radius: pins.radius, rows,

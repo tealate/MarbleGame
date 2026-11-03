@@ -112,8 +112,11 @@ function validate(layout: MarbleLayout, c: PhysicsConfig): void {
       const top = mountain.position.y - mountain.height / 2;
       const bottom = mountain.position.y + mountain.height / 2;
       const upper = layout.upper;
-      if (left <= upper.wallThickness || right >= upper.bounds.width - upper.wallThickness
-        || top <= upper.wallThickness || bottom >= Math.min(...upper.slots.map((s) => s.y - s.funnelHeight))) {
+      // Allow half-width wall embedding, but keep the accepted sensor depth clear.
+      if (layout.mountainOverlap < 0 || layout.mountainOverlap >= c.marble.radius + Math.min(upper.wallThickness, 3)
+        || left < upper.wallThickness - mountain.width / 2 - 0.001
+        || right > upper.bounds.width - upper.wallThickness + mountain.width / 2 + 0.001
+        || top <= upper.wallThickness || bottom > Math.min(...upper.slots.map((s) => s.y)) + layout.mountainOverlap) {
         fail(`mountain sweep overlaps walls or entrances: ${mountain.id}`);
       }
       const dx = Math.max(left - upper.start.x, 0, upper.start.x - right);

@@ -32,11 +32,12 @@ export const physicsConfig = {
   },
   obstacles: {
     mountains: {
-      enabled: true,
+      enabled: false,
       // Phase is measured in cycles; period in seconds, amplitude in pixels.
+      // Increase period to slow the needles; use equal periods to keep them symmetric.
       motions: [
-        { id: 'left', amplitude: 235, period: 3.6, phase: 0.75 },
-        { id: 'right', amplitude: 235, period: 3.6, phase: 0.25 },
+        { id: 'left', amplitude: 261, period: 4.8, phase: 0.75 },
+        { id: 'right', amplitude: 261, period: 4.8, phase: 0.25 },
       ],
     },
     pinFlow: {
@@ -44,7 +45,7 @@ export const physicsConfig = {
       speed: 22,
       // null derives the interval from stage.lower.pins.spacingY / speed.
       spawnInterval: null as number | null,
-      maxPins: 64,
+      maxPins: 96,
     },
   },
   launch: {

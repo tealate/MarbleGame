@@ -26,7 +26,8 @@ export interface SlotRowConfig {
   openingWidth: number;
   funnelHeight: number;
   /** Open = sensor-only band, without any solid plates or dividers. */
-  entrance: 'open' | 'flat' | 'funnel' | 'crater';
+  entrance: 'open' | 'flat' | 'funnel' | 'crater' | 'bowl';
+  bowlSegments?: number;
   slots: SlotDefinition[];
 }
 
@@ -40,6 +41,7 @@ export interface DeviceConfig extends Rect {
 
 export interface MarbleConfig {
   upper: DeviceConfig & {
+    mountainOverlap: number;
     mountains: { id: string; x: number; y: number; width: number; height: number; topWidth: number }[];
   };
   lower: DeviceConfig & {
@@ -84,6 +86,22 @@ export const palette = {
   pin: 0xd8e4f4,
 };
 
+export const effectGroups = [
+  { id: 'straight', label: 'S', color: 0xffe84a, count: 7 },
+  { id: 'left', label: 'L', color: 0x25e4ed, count: 2 },
+  { id: 'right', label: 'R', color: 0xf34de2, count: 2 },
+  { id: 'heal', label: 'H', color: 0x48ee68, count: 2 },
+];
+export function createEffectSlots(groups = effectGroups): SlotDefinition[] {
+  return groups.flatMap(group => {
+    if (!Number.isInteger(group.count) || group.count < 0) throw new Error(`Invalid effect count: ${group.id}`);
+    return Array.from({ length: group.count }, (_, i) => ({
+      id: `${group.id}-${i + 1}`, label: group.label, color: group.color,
+      action: { kind: 'effect' as const, effectId: group.id, target: 'lower-start' as const },
+    }));
+  });
+}
+
 /** Shared by both teams. Edit here; Vite reloads the layout automatically. */
 export const marbleConfig: MarbleConfig = {
   upper: {
@@ -91,18 +109,14 @@ export const marbleConfig: MarbleConfig = {
     title: '01  効果取得',
     wallThickness: 5,
     start: { x: 58, y: 44, radius: 9, label: '生成地点' },
+    mountainOverlap: 8, // Allowed base overlap into the effect row, in pixels.
     mountains: [
-      { id: 'left', x: 266, y: 112, width: 18, height: 51, topWidth: 0 },
-      { id: 'right', x: 266, y: 120, width: 18, height: 51, topWidth: 0 },
+      { id: 'left', x: 266, y: 139.5, width: 18, height: 51, topWidth: 0 },
+      { id: 'right', x: 266, y: 139.5, width: 18, height: 51, topWidth: 0 },
     ],
     row: {
-      inset: 10, gap: 6, height: 36, openingWidth: 54, funnelHeight: 8, entrance: 'flat',
-      slots: [
-        { id: 'effect-a', label: 'A', color: 0xf3bb65, action: { kind: 'effect', effectId: 'effect-a', target: 'lower-start' } },
-        { id: 'effect-b', label: 'B', color: 0x83d5ad, action: { kind: 'effect', effectId: 'effect-b', target: 'lower-start' } },
-        { id: 'effect-c', label: 'C', color: 0xb79af5, action: { kind: 'effect', effectId: 'effect-c', target: 'lower-start' } },
-        { id: 'effect-d', label: 'D', color: 0x7dcee0, action: { kind: 'effect', effectId: 'effect-d', target: 'lower-start' } },
-      ],
+      inset: 0, gap: 0, height: 36, openingWidth: 20, funnelHeight: 6, entrance: 'bowl', bowlSegments: 8,
+      slots: createEffectSlots(),
     },
   },
   lower: {
@@ -111,8 +125,8 @@ export const marbleConfig: MarbleConfig = {
     wallThickness: 5,
     start: { x: 266, y: 26, radius: 10, label: 'ワープ先 / 再抽選' },
     pins: {
-      radius: 5, spacingX: 70, spacingY: 32, firstY: 70,
-      centerX: 266, rowCounts: [5, 6, 5, 6, 5, 6, 5, 6, 5],
+      radius: 5, spacingX: 66, spacingY: 32, firstY: 70,
+      centerX: 266, rowCounts: [7, 8, 7, 8, 7, 8, 7, 8, 7],
       spawnY: null, spawnBottomInset: 1, despawnY: 54,
     },
     row: {
