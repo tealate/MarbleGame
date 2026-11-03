@@ -1,0 +1,19 @@
+{
+  "width": 1080,
+  "height": 1920,
+  "durationSeconds": 15,
+  "fps": 30,
+  "videoBitsPerSecond": 4000000,
+  "format": "mp4",
+  "screenshot": true,
+  "video": true,
+  "filename": "marble-game-{timestamp}",
+  "outputDirectory": "docs/previews",
+  "autoPush": true,
+  "waitBeforeCaptureMs": 2000,
+  "timeoutMs": 60000,
+  "port": 0,
+  "edgeExecutablePath": "",
+  "softwareRendering": true,
+  "runChecks": true
+}
