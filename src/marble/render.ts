@@ -50,7 +50,7 @@ function drawDevice(device: DeviceLayout, team: Team, isLower: boolean): Contain
   return view;
 }
 
-export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number, height: number): Container {
+export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number, height: number, movingPins = false): Container {
   const view = new Container({ label: team.id });
   view.addChild(new Graphics()
     .rect(0, 0, width, height).fill({ color: team.color, alpha: 0.045 })
@@ -64,7 +64,7 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
   view.addChild(drawDevice(layout.upper, team, false));
   const lower = drawDevice(layout.lower, team, true);
   const pins = new Graphics({ label: 'pins' });
-  layout.pins.forEach((pin) => pins.circle(pin.x, pin.y, pin.radius).fill(palette.pin));
+  if (!movingPins) layout.pins.forEach((pin) => pins.circle(pin.x, pin.y, pin.radius).fill(palette.pin));
   lower.addChild(pins);
   view.addChild(lower);
 
@@ -77,10 +77,27 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
 /** Reuse each ball graphic until its game record is removed. No physics decisions here. */
 export function createMarbleRenderer(parent: Container, team: Team, config: PhysicsConfig) {
   const layer = new Container({ label: 'moving-marbles' });
+  const obstacleLayer = new Container({ label: 'moving-obstacles' });
   const debug = new Graphics({ label: 'physics-colliders' });
-  parent.addChild(layer, debug);
+  parent.addChild(obstacleLayer, layer, debug);
   const balls = new Map<number, Graphics>();
+  const obstacles = new Map<number, Graphics>();
   return (state: TeamSimulation, alpha: number, showColliders: boolean) => {
+    for (const [id, graphic] of obstacles) {
+      if (!state.physics.obstacles.items.has(id)) { graphic.destroy(); obstacles.delete(id); }
+    }
+    for (const item of state.physics.obstacles.items.values()) {
+      let graphic = obstacles.get(item.id);
+      if (!graphic) {
+        graphic = new Graphics();
+        if (item.shape.kind === 'circle') graphic.circle(0, 0, item.shape.radius).fill(palette.pin);
+        else graphic.poly(item.shape.points).fill(palette.wall);
+        obstacles.set(item.id, graphic);
+        obstacleLayer.addChild(graphic);
+      }
+      graphic.position.set(item.previous.x + (item.position.x - item.previous.x) * alpha,
+        item.previous.y + (item.position.y - item.previous.y) * alpha);
+    }
     for (const [id, ball] of balls) {
       if (!state.marbles.has(id)) { ball.destroy(); balls.delete(id); }
     }

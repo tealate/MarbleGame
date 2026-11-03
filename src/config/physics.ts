@@ -26,6 +26,24 @@ export const physicsConfig = {
     wall: { restitution: 0.55, friction: 0.08 },
     pin: { restitution: 0.75, friction: 0.04 },
     funnel: { restitution: 0.2, friction: 0.04 },
+    mountain: { restitution: 0.7, friction: 0.04 },
+  },
+  obstacles: {
+    mountains: {
+      enabled: true,
+      // Phase is measured in cycles; period in seconds, amplitude in pixels.
+      motions: [
+        { id: 'left', amplitude: 235, period: 3.6, phase: 0.75 },
+        { id: 'right', amplitude: 235, period: 3.6, phase: 0.25 },
+      ],
+    },
+    pinFlow: {
+      enabled: true,
+      speed: 22,
+      // null derives the interval from stage.lower.pins.spacingY / speed.
+      spawnInterval: null as number | null,
+      maxPins: 64,
+    },
   },
   launch: {
     upper: { speedMin: 260, speedMax: 460, angleMin: -65, angleMax: 20 },

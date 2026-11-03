@@ -25,6 +25,8 @@ export interface SlotRowConfig {
   height: number;
   openingWidth: number;
   funnelHeight: number;
+  /** Flat ledge, inward funnel, or raised inner lips. Height controls the slope. */
+  entrance: 'flat' | 'funnel' | 'crater';
   slots: SlotDefinition[];
 }
 
@@ -37,7 +39,9 @@ export interface DeviceConfig extends Rect {
 }
 
 export interface MarbleConfig {
-  upper: DeviceConfig;
+  upper: DeviceConfig & {
+    mountains: { id: string; x: number; y: number; width: number; height: number; topWidth: number }[];
+  };
   lower: DeviceConfig & {
     pins: {
       radius: number;
@@ -46,6 +50,8 @@ export interface MarbleConfig {
       firstY: number;
       centerX: number;
       rowCounts: number[];
+      spawnY: number;
+      despawnY: number;
       /** Optional explicit device-local positions replace the generated rows. */
       positions?: Point[];
     };
@@ -83,8 +89,12 @@ export const marbleConfig: MarbleConfig = {
     title: '01  効果取得',
     wallThickness: 5,
     start: { x: 58, y: 72, radius: 9, label: '生成地点' },
+    mountains: [
+      { id: 'left', x: 250, y: 112, width: 18, height: 51, topWidth: 0 },
+      { id: 'right', x: 250, y: 120, width: 18, height: 51, topWidth: 0 },
+    ],
     row: {
-      inset: 10, gap: 6, height: 36, openingWidth: 54, funnelHeight: 16,
+      inset: 10, gap: 6, height: 36, openingWidth: 54, funnelHeight: 8, entrance: 'flat',
       slots: [
         { id: 'effect-a', label: '効果 A', color: 0xf3bb65, action: { kind: 'effect', effectId: 'effect-a', target: 'lower-start' } },
         { id: 'effect-b', label: '効果 B', color: 0x83d5ad, action: { kind: 'effect', effectId: 'effect-b', target: 'lower-start' } },
@@ -101,9 +111,10 @@ export const marbleConfig: MarbleConfig = {
     pins: {
       radius: 5, spacingX: 70, spacingY: 32, firstY: 94,
       centerX: 250, rowCounts: [5, 6, 5],
+      spawnY: 182, despawnY: 86,
     },
     row: {
-      inset: 10, gap: 6, height: 42, openingWidth: 30, funnelHeight: 26,
+      inset: 10, gap: 6, height: 42, openingWidth: 30, funnelHeight: 0, entrance: 'flat',
       slots: [
         { id: 'double-left', label: '×2', color: 0xf3bb65, action: { kind: 'multiplier', factor: 2, target: 'lower-start' } },
         { id: 'deploy-left', label: '出撃', color: 0x83d5ad, action: { kind: 'deploy', target: 'battle' } },

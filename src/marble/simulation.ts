@@ -98,6 +98,49 @@ function validate(layout: MarbleLayout, c: PhysicsConfig): void {
     }
   }
   if (layout.pins.some((p) => p.radius <= 0)) fail('pin radius must be positive');
+  const mountains = c.obstacles.mountains;
+  if (mountains.enabled) {
+    if (new Set(layout.mountains.map((m) => m.id)).size !== layout.mountains.length
+      || new Set(mountains.motions.map((m) => m.id)).size !== mountains.motions.length
+      || mountains.motions.length !== layout.mountains.length) fail('mountain motion IDs must match shapes');
+    for (const mountain of layout.mountains) {
+      const motion = mountains.motions.find((m) => m.id === mountain.id);
+      if (!motion || motion.amplitude < 0 || motion.period <= 0) fail(`invalid mountain motion: ${mountain.id}`);
+      const m = motion!;
+      const left = mountain.position.x - mountain.width / 2 - m.amplitude;
+      const right = mountain.position.x + mountain.width / 2 + m.amplitude;
+      const top = mountain.position.y - mountain.height / 2;
+      const bottom = mountain.position.y + mountain.height / 2;
+      const upper = layout.upper;
+      if (left <= upper.wallThickness || right >= upper.bounds.width - upper.wallThickness
+        || top <= upper.wallThickness || bottom >= Math.min(...upper.slots.map((s) => s.y - s.funnelHeight))) {
+        fail(`mountain sweep overlaps walls or entrances: ${mountain.id}`);
+      }
+      const dx = Math.max(left - upper.start.x, 0, upper.start.x - right);
+      const dy = Math.max(top - upper.start.y, 0, upper.start.y - bottom);
+      if (Math.hypot(dx, dy) <= c.marble.radius + c.spawn.clearance) fail('mountain sweep overlaps spawn');
+      if (2 * Math.PI * m.amplitude / m.period > c.marble.maxSpeed / 2) fail('mountain speed is too high');
+    }
+  }
+  const flow = c.obstacles.pinFlow;
+  if (flow.enabled) {
+    const geometry = layout.pinFlow;
+    const lower = layout.lower;
+    const interval = flow.spawnInterval ?? geometry.spacingY / flow.speed;
+    if (flow.speed <= 0 || flow.speed > c.marble.maxSpeed / 2 || geometry.spacingY <= 0
+      || !Number.isFinite(interval) || interval < c.simulation.fixedTimeStep
+      || !Number.isInteger(flow.maxPins) || flow.maxPins < 1 || geometry.rows.length === 0
+      || geometry.rows.some((row) => row.length > flow.maxPins)) fail('invalid pin flow speed, interval, rows or cap');
+    if (geometry.despawnY - geometry.radius <= lower.start.y + c.marble.radius + c.spawn.clearance
+      || geometry.spawnY <= geometry.despawnY
+      || geometry.spawnY + geometry.radius + c.marble.radius >= Math.min(...lower.slots.map((s) => s.y - s.funnelHeight))) {
+      fail('pin flow boundaries obstruct the lower start or exits');
+    }
+    if (layout.pins.some((pin) => pin.y < geometry.despawnY || pin.y > geometry.spawnY
+      || pin.x - pin.radius <= lower.wallThickness || pin.x + pin.radius >= lower.bounds.width - lower.wallThickness)) {
+      fail('initial pins are outside the scrolling area');
+    }
+  }
 }
 
 export class MarbleSimulation {

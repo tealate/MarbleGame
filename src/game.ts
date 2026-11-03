@@ -39,7 +39,7 @@ export async function createGameScreen(app: Application) {
   marbleView.position.set(marble.x, marble.y);
   const renderers: ReturnType<typeof createMarbleRenderer>[] = [];
   teams.forEach((team, index) => {
-    const view = createMarbleTeam(layout, team, teamWidth, marble.height);
+    const view = createMarbleTeam(layout, team, teamWidth, marble.height, simulation.config.obstacles.pinFlow.enabled);
     view.x = index * teamWidth;
     marbleView.addChild(view);
     renderers.push(createMarbleRenderer(view, team, simulation.config));
@@ -87,7 +87,9 @@ export async function createGameScreen(app: Application) {
       if (status) {
         const text = simulation.teams.map((team, i) => {
           const s = team.stats;
-          return `${teams[i].label} 球=${team.marbles.size} 生成=${s.spawned} 効果=${s.effects} 倍率=${s.multipliers} 出撃=${s.deployed} 回収=${s.retired}`;
+          const obstacles = team.physics.obstacles;
+          return `${teams[i].label} 球=${team.marbles.size} 生成=${s.spawned} 効果=${s.effects} 倍率=${s.multipliers} 出撃=${s.deployed} 回収=${s.retired}`
+            + ` 障害物=${obstacles.items.size} 追加=${obstacles.stats.created} 削除=${obstacles.stats.removed}`;
         }).join('\n') + `\n${lastEvent}`;
         if (status.textContent !== text) status.textContent = text;
       }

@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier2d-compat';
 import type { PhysicsConfig } from '../config/physics';
 import type { Point, Rect } from '../config/stage';
 import type { MarbleLayout, SlotLayout } from './layout';
+import { MovingObstacles } from './obstacles';
 
 export type Stage = 'upper' | 'lower';
 export interface Arrival { marbleId: number; stage: Stage; slot: SlotLayout }
@@ -20,6 +21,7 @@ export function initializePhysics(): Promise<void> {
 /** One independent team world. All external coordinates are team-local pixels. */
 export class MarblePhysics {
   readonly world: RAPIER.World;
+  readonly obstacles: MovingObstacles;
   private readonly marbles = new Map<number, PhysicalMarble>();
   private readonly sensors = new Map<number, Omit<Arrival, 'marbleId'> & { top: number }>();
   private disposed = false;
@@ -46,11 +48,13 @@ export class MarblePhysics {
         this.sensors.set(sensor.handle, { stage, slot, top: origin.y + slot.sensor.y });
       }
     }
-    for (const pin of layout.pins) {
+    if (!config.obstacles.pinFlow.enabled) for (const pin of layout.pins) {
       const desc = RAPIER.ColliderDesc.ball(pin.radius / scale)
         .setTranslation((layout.lower.bounds.x + pin.x) / scale, (layout.lower.bounds.y + pin.y) / scale);
       this.world.createCollider(this.material(desc, 'pin'));
     }
+    this.obstacles = new MovingObstacles(this.world, layout, config,
+      (position, radius) => this.isCircleClear(position, radius));
   }
 
   private material(desc: RAPIER.ColliderDesc, kind: keyof PhysicsConfig['materials']) {
@@ -75,11 +79,14 @@ export class MarblePhysics {
 
   /** Also checks bodies created since the last step (query broad phase can lag). */
   isStartClear(stage: Stage): boolean {
-    const start = this.start(stage);
-    const distance = this.config.marble.radius * 2 + this.config.spawn.clearance;
+    return this.isCircleClear(this.start(stage), this.config.marble.radius);
+  }
+
+  private isCircleClear(position: Point, radius: number): boolean {
+    const distance = this.config.marble.radius + radius + this.config.spawn.clearance;
     for (const { body } of this.marbles.values()) {
       const p = body.translation();
-      if (Math.hypot(p.x * this.scale - start.x, p.y * this.scale - start.y) < distance) return false;
+      if (Math.hypot(p.x * this.scale - position.x, p.y * this.scale - position.y) < distance) return false;
     }
     return true;
   }
@@ -127,6 +134,7 @@ export class MarblePhysics {
       const max = this.config.marble.maxSpeed / this.scale;
       if (speed > max) marble.body.setLinvel({ x: velocity.x * max / speed, y: velocity.y * max / speed }, true);
     }
+    this.obstacles.step(this.config.simulation.fixedTimeStep);
     this.world.step();
     const arrivals: Arrival[] = [];
     for (const [marbleId, marble] of this.marbles) {
@@ -150,6 +158,7 @@ export class MarblePhysics {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.obstacles.dispose();
     this.marbles.clear();
     this.sensors.clear();
     this.world.free();

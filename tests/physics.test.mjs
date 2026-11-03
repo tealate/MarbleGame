@@ -16,6 +16,14 @@ const layout = createMarbleLayout(marbleConfig);
 function config() {
   const c = structuredClone(physicsConfig);
   c.spawn.automatic = false;
+  // Isolate base collisions/rules from moving geometry in the focused tests.
+  c.obstacles.mountains.enabled = false;
+  c.obstacles.pinFlow.enabled = false;
+  return c;
+}
+function movingConfig() {
+  const c = structuredClone(physicsConfig);
+  c.spawn.automatic = false;
   return c;
 }
 function seeded(seed = 12345) {
@@ -210,12 +218,13 @@ test('narrowed openings change the real collision geometry and remain passable',
 });
 
 test('fixed stepping gives equivalent results at 30 and 60 FPS and limits long frames', async (t) => {
-  const { sim: a } = await simulation(t);
-  const { sim: b } = await simulation(t);
+  const { sim: a } = await simulation(t, movingConfig());
+  const { sim: b } = await simulation(t, movingConfig());
   a.spawn('red'); b.spawn('red');
   for (let i = 0; i < 15; i++) a.advance(1 / 30);
   for (let i = 0; i < 30; i++) b.advance(1 / 60);
   assert.deepEqual(a.teams[0].physics.pose(1), b.teams[0].physics.pose(1));
+  assert.deepEqual([...a.teams[0].physics.obstacles.items.values()], [...b.teams[0].physics.obstacles.items.values()]);
   const before = a.teams[0].marbles.get(1).age;
   a.advance(1000);
   assert.ok(a.teams[0].marbles.get(1).age - before <= 0.101);
@@ -261,10 +270,10 @@ test('configured batches wait for spawn clearance and respect capacity', async (
 });
 
 test('crowded 30-second run bounds spawning, live bodies, pending batches and contacts', async (t) => {
-  const c = config(); c.spawn.automatic = true; c.spawn.interval = 0.02;
+  const c = movingConfig(); c.spawn.automatic = true; c.spawn.interval = 0.02;
   c.spawn.batchSize = 8; c.spawn.maxPerTeam = 48;
   const { sim, events } = await simulation(t, c);
-  const base = sim.teams.map((team) => team.physics.world.colliders.len());
+  const base = sim.teams.map((team) => team.physics.world.colliders.len() - team.physics.obstacles.items.size);
   for (let second = 0; second < 30; second++) {
     advance(sim, 1);
     sim.teams.forEach((team, i) => {
@@ -279,9 +288,9 @@ test('crowded 30-second run bounds spawning, live bodies, pending batches and co
 });
 
 test('seeded 120-second run completes both loops and leaves no orphan colliders', async (t) => {
-  const c = config(); c.spawn.automatic = true;
+  const c = movingConfig(); c.spawn.automatic = true;
   const { sim, events } = await simulation(t, c);
-  const base = sim.teams.map((team) => team.physics.world.colliders.len());
+  const base = sim.teams.map((team) => team.physics.world.colliders.len() - team.physics.obstacles.items.size);
   advance(sim, 120);
   sim.teams.forEach((team, i) => {
     assert.ok(team.stats.effects > 30);
@@ -289,9 +298,212 @@ test('seeded 120-second run completes both loops and leaves no orphan colliders'
     assert.ok(team.stats.deployed > 20);
     assert.ok(team.marbles.size <= c.spawn.maxPerTeam);
     const active = [...team.marbles.values()].filter((m) => !m.waiting).length;
-    assert.equal(team.physics.world.bodies.len(), active);
-    assert.equal(team.physics.world.colliders.len(), base[i] + active);
+    assert.equal(team.physics.world.bodies.len(), active + team.physics.obstacles.items.size);
+    assert.equal(team.physics.world.colliders.len(), base[i] + active + team.physics.obstacles.items.size);
   });
   assert.equal(events.filter((e) => e.reason === 'out-of-bounds').length, 0);
   t.diagnostic(JSON.stringify(sim.teams.map((team) => team.stats)));
+  t.diagnostic(`Mean upper-stage time: ${(events.filter((e) => e.type === 'effect')
+    .reduce((sum, e) => sum + e.marble.age, 0) / events.filter((e) => e.type === 'effect').length).toFixed(2)}s`);
+});
+
+test('flat, funnel and crater entrances share open geometry with functioning sensors', (t) => {
+  for (const entrance of ['flat', 'funnel', 'crater']) {
+    const stage = structuredClone(marbleConfig);
+    stage.upper.row.entrance = entrance;
+    const geometry = createMarbleLayout(stage);
+    const slot = geometry.upper.slots[0];
+    const shoulder = slot.solids[3];
+    if (entrance === 'flat') assert.equal(shoulder[0].y, shoulder[1].y);
+    if (entrance === 'funnel') assert.ok(shoulder[0].y < shoulder[1].y);
+    if (entrance === 'crater') assert.ok(shoulder[0].y > shoulder[1].y);
+    const p = world(t, config(), geometry);
+    p.add(1, { x: geometry.upper.bounds.x + slot.x + slot.width / 2,
+      y: geometry.upper.bounds.y + slot.y - slot.funnelHeight - 15 }, { x: 0, y: 180 });
+    let result;
+    for (let i = 0; i < 180 && !result; i++) result = p.step()[0];
+    assert.equal(result?.slot.definition.id, 'effect-a', entrance);
+  }
+});
+
+test('two narrow needles cross at the center and travel to both edges', (t) => {
+  const c = movingConfig(); c.obstacles.pinFlow.enabled = false;
+  const p = world(t, c);
+  const mountains = [...p.obstacles.items.values()];
+  assert.equal(mountains.length, 2);
+  assert.equal(mountains[0].shape.points, layout.mountains[0].points);
+  const angle = 2 * Math.atan(layout.mountains[0].width / (2 * layout.mountains[0].height)) * 180 / Math.PI;
+  assert.ok(Math.abs(angle - 20) < 1);
+  assert.equal(mountains[0].shape.points.length, 3);
+  const edges = mountains.map((m) => m.position.x);
+  const stepCount = Math.round(c.obstacles.mountains.motions[0].period / 4 / c.simulation.fixedTimeStep);
+  for (let i = 0; i < stepCount; i++) p.step();
+  assert.ok(mountains.every((m) => Math.abs(m.position.x - (layout.upper.bounds.x + 250)) < 0.01));
+  for (const body of p.world.bodies.getAll()) {
+    assert.ok(body.isKinematic());
+    assert.ok(mountains.some((m) => Math.hypot(m.position.x - body.translation().x * p.scale,
+      m.position.y - body.translation().y * p.scale) < 0.001));
+  }
+  for (let i = 0; i < stepCount; i++) p.step();
+  assert.ok(Math.abs(mountains[0].position.x - edges[1]) < 0.01);
+  assert.ok(Math.abs(mountains[1].position.x - edges[0]) < 0.01);
+  for (let i = 0; i < stepCount * 2; i++) p.step();
+  assert.ok(Math.abs(mountains[0].position.x - edges[0]) < 0.01);
+  assert.ok(Math.abs(mountains[1].position.x - edges[1]) < 0.01);
+  assert.ok(mountains.every((m) => m.position.x - 9 > layout.upper.bounds.x + layout.upper.wallThickness
+    && m.position.x + 9 < layout.upper.bounds.x + layout.upper.bounds.width - layout.upper.wallThickness));
+});
+
+test('a moving mountain physically pushes a stationary marble', (t) => {
+  const c = movingConfig(); c.gravity.y = 0; c.obstacles.pinFlow.enabled = false;
+  const p = world(t, c);
+  const m = layout.mountains[0];
+  const start = { x: layout.upper.bounds.x + m.position.x - c.obstacles.mountains.motions[0].amplitude
+      + m.width / 2 + c.marble.radius + 2,
+    y: layout.upper.bounds.y + m.position.y + m.height / 2 - 2 };
+  p.add(1, start, { x: 0, y: 0 });
+  for (let i = 0; i < 45; i++) p.step();
+  assert.ok(p.pose(1).x > start.x + 5, `mountain should transfer horizontal momentum: ${JSON.stringify(p.pose(1))}`);
+});
+
+test('an upward-moving pin transfers momentum without moving the marble by script', (t) => {
+  const c = movingConfig(); c.gravity.y = 0; c.obstacles.mountains.enabled = false;
+  const p = world(t, c);
+  const pin = layout.pins[5];
+  const start = { x: layout.lower.bounds.x + pin.x,
+    y: layout.lower.bounds.y + pin.y - pin.radius - c.marble.radius - 4 };
+  p.add(1, start, { x: 0, y: 0 });
+  for (let i = 0; i < 60; i++) p.step();
+  assert.ok(p.pose(1).y < start.y - 5);
+  const stationary = structuredClone(c); stationary.obstacles.pinFlow.enabled = false;
+  const fixed = world(t, stationary);
+  fixed.add(1, start, { x: 0, y: 0 });
+  for (let i = 0; i < 60; i++) fixed.step();
+  assert.ok(Math.abs(fixed.pose(1).y - start.y) < 0.001);
+});
+
+test('new pin rows keep alternating A/B offsets after the initial A/B/A rows', (t) => {
+  const c = movingConfig(); c.obstacles.mountains.enabled = false;
+  const p = world(t, c);
+  assert.equal(layout.pinFlow.rows.length, 2);
+  const initialYs = [...new Set(layout.pins.map((pin) => pin.y))].sort((a, b) => a - b);
+  assert.equal(initialYs.length, 3);
+  initialYs.forEach((y, index) => {
+    assert.deepEqual(layout.pins.filter((pin) => pin.y === y).map((pin) => pin.x),
+      layout.pinFlow.rows[index % 2]);
+  });
+  let lastId = Math.max(...p.obstacles.items.keys());
+  for (let rowIndex = 0; rowIndex < 4; rowIndex++) {
+    let generated = [];
+    for (let step = 0; step < 300 && generated.length === 0; step++) {
+      p.step();
+      generated = [...p.obstacles.items.values()].filter((item) => item.id > lastId);
+    }
+    assert.ok(generated.length > 0, `row ${rowIndex} was not generated`);
+    assert.deepEqual(generated.map((item) => item.position.x - layout.lower.bounds.x),
+      layout.pinFlow.rows[(initialYs.length + rowIndex) % 2]);
+    lastId = generated.at(-1).id;
+  }
+  const [a, b] = layout.pinFlow.rows;
+  assert.equal(Math.abs(a[0] - b[0]), marbleConfig.lower.pins.spacingX / 2);
+});
+
+test('lower result mouths are flat, open and sensor backed', (t) => {
+  const p = world(t);
+  assert.equal(marbleConfig.lower.row.entrance, 'flat');
+  for (const slot of layout.lower.slots) {
+    assert.equal(slot.funnelHeight, 0);
+    assert.equal(slot.solids[3][0].y, slot.solids[3][1].y);
+    assert.ok(slot.sensor.width > 2 * physicsConfig.marble.radius);
+  }
+  assert.ok(p.world.colliders.len() > 0);
+});
+
+test('flow recycles bodies and colliders for five minutes with bounded active counts', (t) => {
+  const c = movingConfig();
+  const p = world(t, c);
+  const fixedCount = p.world.colliders.len() - p.obstacles.items.size;
+  const original = [...p.obstacles.items.values()].find((item) => item.kind === 'pin').id;
+  let maxActive = 0;
+  for (let i = 0; i < 300 / c.simulation.fixedTimeStep; i++) {
+    p.step();
+    maxActive = Math.max(maxActive, p.obstacles.items.size);
+    if (i % 120 === 0) {
+      assert.equal(p.world.bodies.len(), p.obstacles.items.size);
+      assert.equal(p.world.colliders.len(), fixedCount + p.obstacles.items.size);
+    }
+  }
+  assert.equal(p.obstacles.items.has(original), false);
+  assert.ok(p.obstacles.stats.created > 500 && p.obstacles.stats.removed > 500);
+  assert.ok(maxActive <= c.obstacles.pinFlow.maxPins + layout.mountains.length);
+  p.obstacles.dispose(); p.obstacles.dispose();
+  assert.equal(p.obstacles.items.size, 0);
+  assert.equal(p.world.bodies.len(), 0);
+  assert.equal(p.world.colliders.len(), fixedCount);
+});
+
+test('speed, period, amplitude, row cadence and shape can be adjusted from configuration', (t) => {
+  const c = movingConfig(); c.obstacles.pinFlow.speed = 40; c.obstacles.pinFlow.spawnInterval = 0.5;
+  c.obstacles.mountains.motions[0].amplitude = 25; c.obstacles.mountains.motions[0].period = 2;
+  const stage = structuredClone(marbleConfig); stage.upper.mountains[0].width = 60;
+  stage.upper.mountains[0].topWidth = 0;
+  const geometry = createMarbleLayout(stage);
+  const p = world(t, c, geometry);
+  const mountain = [...p.obstacles.items.values()].find((o) => o.kind === 'mountain');
+  const pin = [...p.obstacles.items.values()].filter((o) => o.kind === 'pin')[5];
+  const initialX = mountain.position.x, initialY = pin.position.y;
+  assert.equal(mountain.shape.points.length, 3);
+  assert.equal(Math.max(...mountain.shape.points.map((v) => v.x)), 30);
+  for (let i = 0; i < 60; i++) p.step();
+  assert.ok(Math.abs(mountain.position.x - initialX - 25) < 0.01);
+  assert.ok(Math.abs(pin.position.y - initialY + 20) < 0.01);
+  assert.equal(p.obstacles.interval, 0.5);
+  assert.ok(p.obstacles.stats.created > layout.mountains.length + layout.pins.length);
+});
+
+test('moving geometry rejects obstructed starts, exits, excessive speed and unbounded spawn cadence', async () => {
+  const badMountain = movingConfig(); badMountain.obstacles.mountains.motions[0].amplitude = 300;
+  await assert.rejects(MarbleSimulation.create(layout, badMountain), /mountain sweep/);
+  const badSpeed = movingConfig(); badSpeed.obstacles.pinFlow.speed = 0;
+  await assert.rejects(MarbleSimulation.create(layout, badSpeed), /pin flow/);
+  const badInterval = movingConfig(); badInterval.obstacles.pinFlow.spawnInterval = 0.0001;
+  await assert.rejects(MarbleSimulation.create(layout, badInterval), /pin flow/);
+  const stage = structuredClone(marbleConfig); stage.lower.pins.despawnY = 60;
+  await assert.rejects(MarbleSimulation.create(createMarbleLayout(stage), movingConfig()), /boundaries/);
+});
+
+test('Pixi obstacle graphics match shared shapes and poses, and are destroyed with retired pins', async (t) => {
+  // Pixi's module-level browser detection expects navigator on Node 20.
+  // No canvas/GPU is mocked: this test verifies real display-object lifecycle only.
+  if (!globalThis.navigator) {
+    Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'node' }, configurable: true });
+    t.after(() => { delete globalThis.navigator; });
+  }
+  const { Container } = await import('pixi.js');
+  const { createMarbleRenderer } = await server.ssrLoadModule('/src/marble/render.ts');
+  const c = movingConfig();
+  const { sim } = await simulation(t, c);
+  const parent = new Container();
+  t.after(() => parent.destroy({ children: true }));
+  const render = createMarbleRenderer(parent, { id: 'red', label: '赤', color: 0xff0000 }, c);
+  const team = sim.teams[0];
+  render(team, 1, false);
+  const layer = parent.children.find((child) => child.label === 'moving-obstacles');
+  const firstGraphics = [...layer.children];
+  for (let frame = 0; frame < 900; frame++) {
+    sim.advance(1 / 60);
+    render(team, 0.5, false);
+    assert.equal(layer.children.length, team.physics.obstacles.items.size);
+  }
+  assert.ok(firstGraphics.slice(2).every((graphic) => graphic.destroyed));
+  const records = [...team.physics.obstacles.items.values()];
+  layer.children.forEach((graphic, i) => {
+    const item = records[i];
+    assert.ok(Math.abs(graphic.x - (item.previous.x + item.position.x) / 2) < 0.001);
+    assert.ok(Math.abs(graphic.y - (item.previous.y + item.position.y) / 2) < 0.001);
+    const bounds = graphic.getLocalBounds();
+    const expectedWidth = item.shape.kind === 'circle' ? 2 * item.shape.radius
+      : Math.max(...item.shape.points.map((p) => p.x)) - Math.min(...item.shape.points.map((p) => p.x));
+    assert.ok(Math.abs(bounds.width - expectedWidth) < 0.001);
+  });
 });
