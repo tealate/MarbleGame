@@ -1,7 +1,8 @@
 import type { Application } from 'pixi.js';
+import { screenConfig } from './config/stage';
 
-export const GAME_WIDTH = 1080;
-export const GAME_HEIGHT = 1920;
+export const GAME_WIDTH = screenConfig.width;
+export const GAME_HEIGHT = screenConfig.height;
 
 export function fitGameToWindow(app: Application): void {
   const fitScale = Math.min(

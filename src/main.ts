@@ -12,12 +12,17 @@ async function start(): Promise<void> {
     background: 0x101722,
     antialias: true,
   });
-  app.ticker.maxFPS = 60;
+  // This milestone is a static layout: render only on load and resize.
+  app.stop();
 
   document.querySelector<HTMLElement>('#game')!.appendChild(app.canvas);
   createGameScreen(app);
   fitGameToWindow(app);
-  window.addEventListener('resize', () => fitGameToWindow(app));
+  app.render();
+  window.addEventListener('resize', () => {
+    fitGameToWindow(app);
+    app.render();
+  });
 }
 
 void start().catch((error: unknown) => {
