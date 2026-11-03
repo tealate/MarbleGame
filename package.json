@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test tests/layout.test.mjs",
+    "test": "node --test tests/layout.test.mjs tests/physics.test.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
+    "@dimforge/rapier2d-compat": "^0.21.0",
     "pixi.js": "^8.0.0"
   },
   "devDependencies": {

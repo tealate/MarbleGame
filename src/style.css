@@ -20,3 +20,17 @@ body {
   display: block;
   flex: none;
 }
+/* Only shown with ?debug; does not change the 1080×1920 canvas. */
+.debug-panel {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100vw - 16px);
+  padding: 8px;
+  background: #0b1422e8;
+  color: #eaf1fb;
+  font: 12px monospace;
+  z-index: 1;
+}
+.debug-panel button { margin: 2px; padding: 5px 8px; cursor: pointer; }
+.debug-panel pre { margin: 6px 0 0; white-space: pre-wrap; }

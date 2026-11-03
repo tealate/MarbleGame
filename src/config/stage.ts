@@ -2,7 +2,7 @@
 export interface Point { x: number; y: number }
 export interface Rect extends Point { width: number; height: number }
 
-// Meaning is independent of the label/color. These describe future behavior only.
+// Meaning is independent of the label/color; the simulation consumes these actions.
 export type SlotAction =
   | { kind: 'effect'; effectId: string; target: 'lower-start' }
   | { kind: 'multiplier'; factor: number; target: 'lower-start' }

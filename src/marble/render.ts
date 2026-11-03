@@ -1,6 +1,8 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { palette, type Team } from '../config/stage';
 import type { DeviceLayout, MarbleLayout, SlotLayout } from './layout';
+import type { PhysicsConfig } from '../config/physics';
+import type { TeamSimulation } from './simulation';
 
 export function label(text: string, x: number, y: number, size: number, color = palette.text): Text {
   const item = new Text({
@@ -12,19 +14,13 @@ export function label(text: string, x: number, y: number, size: number, color = 
   return item;
 }
 
-function drawSlot(slot: SlotLayout, wall: number): Container {
+function drawSlot(slot: SlotLayout): Container {
   const view = new Container({ label: slot.definition.id });
   view.position.set(slot.x, slot.y);
-  const { width, height, openingWidth, funnelHeight, definition } = slot;
-  const left = (width - openingWidth) / 2;
-  const right = left + openingWidth;
-  // The two shoulders leave a real gap of openingWidth in the top edge.
+  const { width, height, definition } = slot;
   const shape = new Graphics()
-    .rect(0, 0, width, height).fill({ color: definition.color, alpha: 0.17 })
-    .moveTo(0, -funnelHeight).lineTo(left, 0).lineTo(0, 0)
-    .lineTo(0, height).lineTo(width, height).lineTo(width, 0)
-    .lineTo(right, 0).lineTo(width, -funnelHeight)
-    .stroke({ width: Math.min(wall, 3), color: definition.color });
+    .rect(0, 0, width, height).fill({ color: definition.color, alpha: 0.17 });
+  slot.solids.forEach((points) => shape.poly(points).fill({ color: definition.color, alpha: 0.85 }));
   view.addChild(shape);
   const title = label(definition.label, width / 2, height / 2, 21, definition.color);
   const fit = Math.min(1, Math.max(1, width - 8) / title.width, Math.max(1, height - 4) / title.height);
@@ -50,7 +46,7 @@ function drawDevice(device: DeviceLayout, team: Team, isLower: boolean): Contain
   const startLabel = label(start.label, start.x + start.radius + 12, start.y, 16, palette.muted);
   startLabel.anchor.x = 0;
   view.addChild(startLabel);
-  device.slots.forEach((slot) => view.addChild(drawSlot(slot, device.wallThickness)));
+  device.slots.forEach((slot) => view.addChild(drawSlot(slot)));
   return view;
 }
 
@@ -76,4 +72,41 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
   const gapBottom = layout.lower.bounds.y;
   view.addChild(label('↓ 効果取得後、下段へワープ', width / 2, (gapTop + gapBottom) / 2, 17, palette.muted));
   return view;
+}
+
+/** Reuse each ball graphic until its game record is removed. No physics decisions here. */
+export function createMarbleRenderer(parent: Container, team: Team, config: PhysicsConfig) {
+  const layer = new Container({ label: 'moving-marbles' });
+  const debug = new Graphics({ label: 'physics-colliders' });
+  parent.addChild(layer, debug);
+  const balls = new Map<number, Graphics>();
+  return (state: TeamSimulation, alpha: number, showColliders: boolean) => {
+    for (const [id, ball] of balls) {
+      if (!state.marbles.has(id)) { ball.destroy(); balls.delete(id); }
+    }
+    for (const marble of state.marbles.values()) {
+      let ball = balls.get(marble.id);
+      if (!ball) {
+        const r = config.marble.radius;
+        ball = new Graphics().circle(0, 0, r).fill(team.color)
+          .stroke({ width: 1, color: 0xffffff })
+          .circle(r * 0.35, -r * 0.3, r * 0.23).fill(0xffffff);
+        balls.set(marble.id, ball);
+        layer.addChild(ball);
+      }
+      const pose = state.physics.pose(marble.id, alpha);
+      ball.visible = pose !== undefined;
+      if (pose) { ball.position.set(pose.x, pose.y); ball.rotation = pose.angle; }
+    }
+    debug.clear();
+    if (showColliders) {
+      const vertices = state.physics.debugLines();
+      const scale = state.physics.scale;
+      for (let i = 0; i < vertices.length; i += 4) {
+        debug.moveTo(vertices[i] * scale, vertices[i + 1] * scale)
+          .lineTo(vertices[i + 2] * scale, vertices[i + 3] * scale);
+      }
+      debug.stroke({ width: 1, color: 0x4dffca, alpha: 0.9 });
+    }
+  };
 }

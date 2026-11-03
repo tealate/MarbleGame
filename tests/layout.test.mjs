@@ -3,7 +3,8 @@ import { after, test } from 'node:test';
 import { createServer } from 'vite';
 
 // Reuse Vite's TypeScript loader. No server is opened and no test dependency is needed.
-const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false },
+  optimizeDeps: { noDiscovery: true, entries: [] }, appType: 'custom' });
 after(() => server.close());
 const { marbleConfig, teams } = await server.ssrLoadModule('/src/config/stage.ts');
 const { createScreenLayout, createMarbleLayout } = await server.ssrLoadModule('/src/marble/layout.ts');
