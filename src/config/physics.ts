@@ -20,6 +20,8 @@ export const physicsConfig = {
     linearDamping: 0.08,
     angularDamping: 0.1,
     maxSpeed: 900,
+    // Downward (+y) speed only. Horizontal motion and upward bounces are unchanged.
+    maxFallSpeed: 160,
     ccd: true,
   },
   materials: {

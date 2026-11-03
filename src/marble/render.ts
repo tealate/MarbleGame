@@ -22,7 +22,18 @@ function drawSlot(slot: SlotLayout): Container {
     .rect(0, 0, width, height).fill({ color: definition.color, alpha: 0.17 });
   slot.solids.forEach((points) => shape.poly(points).fill({ color: definition.color, alpha: 0.85 }));
   view.addChild(shape);
-  const title = label(definition.label, width / 2, height / 2, 21, definition.color);
+  // Actions carry meaning; editable labels remain available for tools/debugging.
+  if (definition.action.kind === 'deploy') {
+    const size = Math.min(12, width / 4, height / 3);
+    shape.poly([{ x: width / 2, y: height / 2 - size },
+      { x: width / 2 + size, y: height / 2 + size },
+      { x: width / 2, y: height / 2 + size / 2 },
+      { x: width / 2 - size, y: height / 2 + size }]).fill(definition.color);
+    return view;
+  }
+  const text = definition.action.kind === 'multiplier' ? `×${definition.action.factor}`
+    : definition.label;
+  const title = label(text, width / 2, height / 2, 21, definition.color);
   const fit = Math.min(1, Math.max(1, width - 8) / title.width, Math.max(1, height - 4) / title.height);
   title.scale.set(fit);
   view.addChild(title);
@@ -40,12 +51,6 @@ function drawDevice(device: DeviceLayout, team: Team, isLower: boolean): Contain
   if (isLower) graphics.stroke({ width: 3, color: team.color });
   else graphics.fill(team.color);
   view.addChild(graphics);
-  const title = label(device.title, 16, 22, 18, palette.muted);
-  title.anchor.x = 0;
-  view.addChild(title);
-  const startLabel = label(start.label, start.x + start.radius + 12, start.y, 16, palette.muted);
-  startLabel.anchor.x = 0;
-  view.addChild(startLabel);
   device.slots.forEach((slot) => view.addChild(drawSlot(slot)));
   return view;
 }
@@ -53,14 +58,7 @@ function drawDevice(device: DeviceLayout, team: Team, isLower: boolean): Contain
 export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number, height: number, movingPins = false): Container {
   const view = new Container({ label: team.id });
   view.addChild(new Graphics()
-    .rect(0, 0, width, height).fill({ color: team.color, alpha: 0.045 })
-    .rect(20, 16, 5, 22).fill(team.color));
-  const heading = label(team.label, 36, 27, 24, team.color);
-  heading.anchor.x = 0;
-  view.addChild(heading);
-  const caption = label('MARBLE ZONE', width - 20, 27, 16, palette.muted);
-  caption.anchor.x = 1;
-  view.addChild(caption);
+    .rect(0, 0, width, height).fill({ color: team.color, alpha: 0.045 }));
   view.addChild(drawDevice(layout.upper, team, false));
   const lower = drawDevice(layout.lower, team, true);
   const pins = new Graphics({ label: 'pins' });
@@ -68,9 +66,12 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
   lower.addChild(pins);
   view.addChild(lower);
 
-  const gapTop = layout.upper.bounds.y + layout.upper.bounds.height;
-  const gapBottom = layout.lower.bounds.y;
-  view.addChild(label('↓ 効果取得後、下段へワープ', width / 2, (gapTop + gapBottom) / 2, 17, palette.muted));
+  // Team identity uses narrow color rails instead of a separate heading row.
+  const rails = new Graphics();
+  for (const device of [layout.upper, layout.lower]) {
+    rails.rect(device.bounds.x, device.bounds.y, device.bounds.width, 3).fill(team.color);
+  }
+  view.addChild(rails);
   return view;
 }
 

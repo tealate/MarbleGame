@@ -56,7 +56,8 @@ function createDevice(config: DeviceConfig): DeviceLayout {
   const slots = row.slots.map((definition): SlotLayout => {
     const slotWidth = definition.width ?? defaultWidth;
     const slotHeight = definition.height ?? row.height;
-    const openingWidth = definition.openingWidth ?? row.openingWidth;
+    const open = row.entrance === 'open';
+    const openingWidth = open ? slotWidth : definition.openingWidth ?? row.openingWidth;
     if (ids.has(definition.id) || slotWidth <= 0 || slotHeight <= 0
         || openingWidth <= 0 || openingWidth > slotWidth || row.funnelHeight < 0
         || slotHeight + row.funnelHeight >= height - 2 * wall) {
@@ -73,7 +74,7 @@ function createDevice(config: DeviceConfig): DeviceLayout {
       box(slotWidth - thickness, thickness, thickness, slotHeight - thickness),
       box(0, slotHeight - thickness, slotWidth, thickness),
     ];
-    const slopeHeight = row.entrance === 'flat' ? 0 : row.funnelHeight;
+    const slopeHeight = row.entrance === 'flat' || open ? 0 : row.funnelHeight;
     const outerEdgeY = row.entrance === 'funnel' ? -slopeHeight : 0;
     const innerEdgeY = row.entrance === 'crater' ? -slopeHeight : 0;
     if (left > 0) solids.push(
@@ -86,8 +87,9 @@ function createDevice(config: DeviceConfig): DeviceLayout {
     const slot = {
       definition, x: nextX, y: height - wall - slotHeight,
       width: slotWidth, height: slotHeight, openingWidth, funnelHeight: slopeHeight, outerEdgeY,
-      solids,
-      sensor: { x: left, y: thickness, width: openingWidth, height: slotHeight - 2 * thickness },
+      solids: open ? [] : solids,
+      sensor: open ? { x: 0, y: 0, width: slotWidth, height: slotHeight }
+        : { x: left, y: thickness, width: openingWidth, height: slotHeight - 2 * thickness },
     };
     nextX += slotWidth + row.gap;
     return slot;
@@ -112,7 +114,7 @@ function createDevice(config: DeviceConfig): DeviceLayout {
       { x: 0, y: wall, width: wall, height: height - 2 * wall },
       { x: width - wall, y: wall, width: wall, height: height - 2 * wall },
       { x: 0, y: height - wall, width, height: wall },
-      ...caps,
+      ...(row.entrance === 'open' ? [] : caps),
     ],
   };
 }
@@ -142,6 +144,9 @@ export function createMarbleLayout(config: MarbleConfig): MarbleLayout {
     lower: createDevice(config.lower),
     pins: positions.map((point) => ({ ...point, radius: pins.radius })),
     mountains,
-    pinFlow: { spawnY: pins.spawnY, despawnY: pins.despawnY, spacingY: pins.spacingY, radius: pins.radius, rows },
+    pinFlow: {
+      spawnY: pins.spawnY ?? config.lower.height - config.lower.wallThickness - pins.radius - pins.spawnBottomInset,
+      despawnY: pins.despawnY, spacingY: pins.spacingY, radius: pins.radius, rows,
+    },
   };
 }

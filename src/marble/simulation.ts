@@ -56,7 +56,7 @@ function validate(layout: MarbleLayout, c: PhysicsConfig): void {
   finite(c);
   finite(layout);
   for (const [key, value] of Object.entries({ ...c.simulation, radius: c.marble.radius,
-    density: c.marble.density, maxSpeed: c.marble.maxSpeed, interval: c.spawn.interval,
+    density: c.marble.density, maxSpeed: c.marble.maxSpeed, maxFallSpeed: c.marble.maxFallSpeed, interval: c.spawn.interval,
     maxPerTeam: c.spawn.maxPerTeam, batchSize: c.spawn.batchSize, maxLifetime: c.rules.maxLifetime,
     initialValue: c.rules.initialValue, maxValue: c.rules.maxValue })) {
     if (value <= 0) fail(`${key} must be positive`);
@@ -131,9 +131,12 @@ function validate(layout: MarbleLayout, c: PhysicsConfig): void {
       || !Number.isFinite(interval) || interval < c.simulation.fixedTimeStep
       || !Number.isInteger(flow.maxPins) || flow.maxPins < 1 || geometry.rows.length === 0
       || geometry.rows.some((row) => row.length > flow.maxPins)) fail('invalid pin flow speed, interval, rows or cap');
+    const openResults = lower.slots.every((slot) => slot.solids.length === 0);
+    const bottomLimit = openResults ? lower.bounds.height - lower.wallThickness
+      : Math.min(...lower.slots.map((s) => s.y - s.funnelHeight)) - c.marble.radius;
     if (geometry.despawnY - geometry.radius <= lower.start.y + c.marble.radius + c.spawn.clearance
       || geometry.spawnY <= geometry.despawnY
-      || geometry.spawnY + geometry.radius + c.marble.radius >= Math.min(...lower.slots.map((s) => s.y - s.funnelHeight))) {
+      || geometry.spawnY + geometry.radius >= bottomLimit) {
       fail('pin flow boundaries obstruct the lower start or exits');
     }
     if (layout.pins.some((pin) => pin.y < geometry.despawnY || pin.y > geometry.spawnY

@@ -25,8 +25,8 @@ export interface SlotRowConfig {
   height: number;
   openingWidth: number;
   funnelHeight: number;
-  /** Flat ledge, inward funnel, or raised inner lips. Height controls the slope. */
-  entrance: 'flat' | 'funnel' | 'crater';
+  /** Open = sensor-only band, without any solid plates or dividers. */
+  entrance: 'open' | 'flat' | 'funnel' | 'crater';
   slots: SlotDefinition[];
 }
 
@@ -50,7 +50,9 @@ export interface MarbleConfig {
       firstY: number;
       centerX: number;
       rowCounts: number[];
-      spawnY: number;
+      /** null follows the inside bottom edge when the device size changes. */
+      spawnY: number | null;
+      spawnBottomInset: number;
       despawnY: number;
       /** Optional explicit device-local positions replace the generated rows. */
       positions?: Point[];
@@ -85,36 +87,36 @@ export const palette = {
 /** Shared by both teams. Edit here; Vite reloads the layout automatically. */
 export const marbleConfig: MarbleConfig = {
   upper: {
-    x: 20, y: 52, width: 500, height: 188,
+    x: 4, y: 4, width: 532, height: 200,
     title: '01  効果取得',
     wallThickness: 5,
-    start: { x: 58, y: 72, radius: 9, label: '生成地点' },
+    start: { x: 58, y: 44, radius: 9, label: '生成地点' },
     mountains: [
-      { id: 'left', x: 250, y: 112, width: 18, height: 51, topWidth: 0 },
-      { id: 'right', x: 250, y: 120, width: 18, height: 51, topWidth: 0 },
+      { id: 'left', x: 266, y: 112, width: 18, height: 51, topWidth: 0 },
+      { id: 'right', x: 266, y: 120, width: 18, height: 51, topWidth: 0 },
     ],
     row: {
       inset: 10, gap: 6, height: 36, openingWidth: 54, funnelHeight: 8, entrance: 'flat',
       slots: [
-        { id: 'effect-a', label: '効果 A', color: 0xf3bb65, action: { kind: 'effect', effectId: 'effect-a', target: 'lower-start' } },
-        { id: 'effect-b', label: '効果 B', color: 0x83d5ad, action: { kind: 'effect', effectId: 'effect-b', target: 'lower-start' } },
-        { id: 'effect-c', label: '効果 C', color: 0xb79af5, action: { kind: 'effect', effectId: 'effect-c', target: 'lower-start' } },
-        { id: 'effect-d', label: '効果 D', color: 0x7dcee0, action: { kind: 'effect', effectId: 'effect-d', target: 'lower-start' } },
+        { id: 'effect-a', label: 'A', color: 0xf3bb65, action: { kind: 'effect', effectId: 'effect-a', target: 'lower-start' } },
+        { id: 'effect-b', label: 'B', color: 0x83d5ad, action: { kind: 'effect', effectId: 'effect-b', target: 'lower-start' } },
+        { id: 'effect-c', label: 'C', color: 0xb79af5, action: { kind: 'effect', effectId: 'effect-c', target: 'lower-start' } },
+        { id: 'effect-d', label: 'D', color: 0x7dcee0, action: { kind: 'effect', effectId: 'effect-d', target: 'lower-start' } },
       ],
     },
   },
   lower: {
-    x: 20, y: 280, width: 500, height: 276,
+    x: 4, y: 208, width: 532, height: 368,
     title: '02  倍率変更・出撃抽選',
     wallThickness: 5,
-    start: { x: 250, y: 58, radius: 10, label: 'ワープ先 / 再抽選' },
+    start: { x: 266, y: 26, radius: 10, label: 'ワープ先 / 再抽選' },
     pins: {
-      radius: 5, spacingX: 70, spacingY: 32, firstY: 94,
-      centerX: 250, rowCounts: [5, 6, 5],
-      spawnY: 182, despawnY: 86,
+      radius: 5, spacingX: 70, spacingY: 32, firstY: 70,
+      centerX: 266, rowCounts: [5, 6, 5, 6, 5, 6, 5, 6, 5],
+      spawnY: null, spawnBottomInset: 1, despawnY: 54,
     },
     row: {
-      inset: 10, gap: 6, height: 42, openingWidth: 30, funnelHeight: 0, entrance: 'flat',
+      inset: 0, gap: 0, height: 42, openingWidth: 30, funnelHeight: 0, entrance: 'open',
       slots: [
         { id: 'double-left', label: '×2', color: 0xf3bb65, action: { kind: 'multiplier', factor: 2, target: 'lower-start' } },
         { id: 'deploy-left', label: '出撃', color: 0x83d5ad, action: { kind: 'deploy', target: 'battle' } },

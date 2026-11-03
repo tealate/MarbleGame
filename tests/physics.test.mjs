@@ -122,7 +122,8 @@ test('marble-to-marble contact transfers momentum and prevents overlap', (t) => 
 });
 
 test('every upper and lower opening accepts a real falling marble via its sensor', (t) => {
-  const p = world(t);
+  // Isolate sensors from pins; moving-pin integration is covered by the long runs.
+  const p = world(t, config(), { ...layout, pins: [] });
   let id = 0;
   for (const stage of ['upper', 'lower']) for (const slot of layout[stage].slots) {
     id++;
@@ -338,7 +339,7 @@ test('two narrow needles cross at the center and travel to both edges', (t) => {
   const edges = mountains.map((m) => m.position.x);
   const stepCount = Math.round(c.obstacles.mountains.motions[0].period / 4 / c.simulation.fixedTimeStep);
   for (let i = 0; i < stepCount; i++) p.step();
-  assert.ok(mountains.every((m) => Math.abs(m.position.x - (layout.upper.bounds.x + 250)) < 0.01));
+  assert.ok(mountains.every((m, i) => Math.abs(m.position.x - (layout.upper.bounds.x + layout.mountains[i].position.x)) < 0.01));
   for (const body of p.world.bodies.getAll()) {
     assert.ok(body.isKinematic());
     assert.ok(mountains.some((m) => Math.hypot(m.position.x - body.translation().x * p.scale,
@@ -382,12 +383,12 @@ test('an upward-moving pin transfers momentum without moving the marble by scrip
   assert.ok(Math.abs(fixed.pose(1).y - start.y) < 0.001);
 });
 
-test('new pin rows keep alternating A/B offsets after the initial A/B/A rows', (t) => {
+test('new pin rows keep alternating A/B offsets after the initial rows', (t) => {
   const c = movingConfig(); c.obstacles.mountains.enabled = false;
   const p = world(t, c);
   assert.equal(layout.pinFlow.rows.length, 2);
   const initialYs = [...new Set(layout.pins.map((pin) => pin.y))].sort((a, b) => a - b);
-  assert.equal(initialYs.length, 3);
+  assert.equal(initialYs.length, marbleConfig.lower.pins.rowCounts.length);
   initialYs.forEach((y, index) => {
     assert.deepEqual(layout.pins.filter((pin) => pin.y === y).map((pin) => pin.x),
       layout.pinFlow.rows[index % 2]);
@@ -408,12 +409,91 @@ test('new pin rows keep alternating A/B offsets after the initial A/B/A rows', (
   assert.equal(Math.abs(a[0] - b[0]), marbleConfig.lower.pins.spacingX / 2);
 });
 
-test('lower result mouths are flat, open and sensor backed', (t) => {
+test('fall speed cap slows real falling bodies without changing sideways or upward motion', (t) => {
+  const slow = config();
+  const fast = structuredClone(slow); fast.marble.maxFallSpeed = fast.marble.maxSpeed;
+  const geometry = { ...layout, pins: [] };
+  const a = world(t, slow, geometry), b = world(t, fast, geometry);
+  const start = { x: layout.lower.bounds.x + 80, y: layout.lower.bounds.y + 50 };
+  a.add(1, start, { x: 60, y: 0 }); b.add(1, start, { x: 60, y: 0 });
+  for (let i = 0; i < 72; i++) {
+    a.step(); b.step();
+    assert.ok(a.world.bodies.getAll()[0].linvel().y * a.scale <= slow.marble.maxFallSpeed + 0.001);
+  }
+  assert.ok(a.pose(1).y - start.y < (b.pose(1).y - start.y) * 0.7);
+  assert.ok(Math.abs(a.pose(1).x - b.pose(1).x) < 0.001);
+  t.diagnostic(`0.6s free fall: cap160=${(a.pose(1).y - start.y).toFixed(1)}px, cap900=${(b.pose(1).y - start.y).toFixed(1)}px`);
+
+  const upwardA = world(t, slow, geometry), upwardB = world(t, fast, geometry);
+  upwardA.add(1, start, { x: 30, y: -200 }); upwardB.add(1, start, { x: 30, y: -200 });
+  for (let i = 0; i < 12; i++) { upwardA.step(); upwardB.step(); }
+  assert.deepEqual(upwardA.pose(1), upwardB.pose(1));
+  const launched = world(t, slow, geometry);
+  launched.add(1, start, { x: 30, y: 400 });
+  assert.ok(Math.abs(launched.world.bodies.getAll()[0].linvel().y * launched.scale - 160) < 0.001);
+});
+
+test('fall speed must be finite and positive', async () => {
+  for (const speed of [0, -1, NaN, Infinity]) {
+    const c = config(); c.marble.maxFallSpeed = speed;
+    await assert.rejects(MarbleSimulation.create(layout, c), /maxFallSpeed/);
+  }
+});
+
+test('former lower plates are passable and adjacent bands choose only the ball center result', (t) => {
+  const c = config(); c.gravity.y = 0;
+  const p = world(t, c, { ...layout, pins: [] });
+  const b = layout.lower.bounds;
+  let id = 0;
+  for (const slot of layout.lower.slots) {
+    for (const fraction of [0.2, 0.8]) {
+      const x = b.x + slot.x + slot.width * fraction;
+      p.add(++id, { x, y: b.y + slot.y - 20 }, { x: 0, y: 150 });
+      let found;
+      for (let step = 0; step < 100 && !found; step++) found = p.step().find((a) => a.marbleId === id);
+      assert.equal(found?.slot.definition.id, slot.definition.id);
+      p.remove(id);
+    }
+  }
+  const boundary = b.x + layout.lower.slots[1].x;
+  for (const offset of [-0.5, 0.5]) {
+    p.add(++id, { x: boundary + offset, y: b.y + layout.lower.slots[1].y + 20 }, { x: 0, y: 0 });
+    const arrivals = p.step().filter((a) => a.marbleId === id);
+    assert.equal(arrivals.length, 1);
+    assert.equal(arrivals[0].slot.definition.id, layout.lower.slots[offset < 0 ? 0 : 1].definition.id);
+    p.remove(id);
+  }
+});
+
+test('flow spawns at the bottom inside the result bands and rejects solid exits or floor overlap', async (t) => {
+  const c = movingConfig(); c.obstacles.mountains.enabled = false;
+  const { sim } = await simulation(t, c);
+  const p = sim.teams[0].physics;
+  const firstId = Math.max(...p.obstacles.items.keys());
+  let newPin;
+  for (let step = 0; step < 300 && !newPin; step++) {
+    p.step();
+    newPin = [...p.obstacles.items.values()].find((pin) => pin.id > firstId);
+  }
+  assert.ok(newPin);
+  const bottom = layout.lower.bounds.y + layout.lower.bounds.height;
+  assert.ok(Math.abs(newPin.position.y + layout.pinFlow.radius - (bottom - 6)) < 0.001);
+  assert.ok(newPin.position.y > layout.lower.bounds.y + layout.lower.slots[0].y);
+  const stage = structuredClone(marbleConfig);
+  stage.lower.pins.spawnY = stage.lower.height;
+  await assert.rejects(MarbleSimulation.create(createMarbleLayout(stage), c), /boundaries/);
+  stage.lower.pins.spawnY = null;
+  stage.lower.row.entrance = 'flat';
+  await assert.rejects(MarbleSimulation.create(createMarbleLayout(stage), c), /boundaries/);
+});
+
+test('lower result bands have no solid plates and retain full-width sensors', (t) => {
   const p = world(t);
-  assert.equal(marbleConfig.lower.row.entrance, 'flat');
+  assert.equal(marbleConfig.lower.row.entrance, 'open');
   for (const slot of layout.lower.slots) {
     assert.equal(slot.funnelHeight, 0);
-    assert.equal(slot.solids[3][0].y, slot.solids[3][1].y);
+    assert.deepEqual(slot.solids, []);
+    assert.equal(slot.sensor.width, slot.width);
     assert.ok(slot.sensor.width > 2 * physicsConfig.marble.radius);
   }
   assert.ok(p.world.colliders.len() > 0);
@@ -468,7 +548,7 @@ test('moving geometry rejects obstructed starts, exits, excessive speed and unbo
   await assert.rejects(MarbleSimulation.create(layout, badSpeed), /pin flow/);
   const badInterval = movingConfig(); badInterval.obstacles.pinFlow.spawnInterval = 0.0001;
   await assert.rejects(MarbleSimulation.create(layout, badInterval), /pin flow/);
-  const stage = structuredClone(marbleConfig); stage.lower.pins.despawnY = 60;
+  const stage = structuredClone(marbleConfig); stage.lower.pins.despawnY = stage.lower.start.y + 10;
   await assert.rejects(MarbleSimulation.create(createMarbleLayout(stage), movingConfig()), /boundaries/);
 });
 

@@ -22,7 +22,10 @@ test('default devices, starts, pins and slots fit inside their local areas', () 
   const layout = createMarbleLayout(marbleConfig);
   assert.equal(layout.upper.slots.length, 4);
   assert.equal(layout.lower.slots.length, 5);
-  assert.equal(layout.pins.length, 16);
+  assert.equal(layout.pins.length, 49);
+  assert.equal(540 - layout.lower.bounds.width, 8, 'central gap is 8px');
+  assert.equal(layout.lower.bounds.y + layout.lower.bounds.height, 576, 'device reaches screen bottom');
+  assert.equal(layout.pinFlow.spawnY + layout.pinFlow.radius, layout.lower.bounds.height - 6);
   for (const device of [layout.upper, layout.lower]) {
     const { bounds, start, wallThickness: wall } = device;
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 540);
@@ -41,7 +44,7 @@ test('default devices, starts, pins and slots fit inside their local areas', () 
     assert.ok(pin.x - pin.radius > layout.lower.wallThickness);
     assert.ok(pin.x + pin.radius < layout.lower.bounds.width - layout.lower.wallThickness);
     assert.ok(pin.y - pin.radius > layout.lower.start.y + layout.lower.start.radius);
-    assert.ok(pin.y + pin.radius < Math.min(...layout.lower.slots.map((s) => s.y - s.funnelHeight)));
+    assert.ok(pin.y + pin.radius < layout.lower.bounds.height - layout.lower.wallThickness);
   }
 });
 
@@ -68,7 +71,8 @@ test('dimensions, openings, slots, starts and pin settings change generated geom
   config.upper.row.slots.push({ id: 'new-effect', label: '新効果', color: 0xffffff,
     action: { kind: 'effect', effectId: 'new-effect', target: 'lower-start' } });
   config.lower.start.x = 230;
-  Object.assign(config.lower.pins, { radius: 8, spacingX: 60, spacingY: 28, firstY: 100, rowCounts: [3, 4] });
+  Object.assign(config.lower.pins, { radius: 8, centerX: 250, spacingX: 60, spacingY: 28, firstY: 100, rowCounts: [3, 4] });
+  config.lower.row.entrance = 'flat';
   config.lower.row.openingWidth = 16;
   const layout = createMarbleLayout(config);
   assert.equal(layout.upper.bounds.width, 480);
@@ -97,9 +101,31 @@ test('explicit pin positions override rows and remain JSON serializable', () => 
 
 test('impossible opening widths and duplicate slot IDs fail with actionable errors', () => {
   const config = structuredClone(marbleConfig);
+  config.lower.row.entrance = 'flat';
   config.lower.row.openingWidth = 600;
   assert.throws(() => createMarbleLayout(config), /Invalid slot.*double-left/);
   config.lower.row.openingWidth = 30;
   config.lower.row.slots[1].id = config.lower.row.slots[0].id;
   assert.throws(() => createMarbleLayout(config), /duplicate ID/);
+});
+
+test('open result bands cover the floor with no plates, even after resizing', () => {
+  const config = structuredClone(marbleConfig);
+  config.lower.height += 20;
+  config.lower.width -= 20;
+  config.lower.pins.radius = 8;
+  config.lower.pins.spawnBottomInset = 2;
+  const layout = createMarbleLayout(config);
+  const { lower } = layout;
+  assert.equal(lower.walls.length, 4, 'only outer walls remain');
+  assert.equal(layout.pinFlow.spawnY, lower.bounds.height - lower.wallThickness - 8 - 2);
+  assert.equal(lower.slots[0].x, lower.wallThickness);
+  lower.slots.forEach((slot, i) => {
+    assert.deepEqual(slot.solids, []);
+    assert.equal(slot.sensor.width, slot.width);
+    assert.equal(slot.openingWidth, slot.width);
+    if (i) assert.ok(Math.abs(lower.slots[i - 1].x + lower.slots[i - 1].width - slot.x) < 1e-8);
+  });
+  const last = lower.slots.at(-1);
+  assert.ok(Math.abs(last.x + last.width - (lower.bounds.width - lower.wallThickness)) < 1e-8);
 });

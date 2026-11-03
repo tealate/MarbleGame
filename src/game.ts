@@ -23,17 +23,16 @@ export async function createGameScreen(app: Application) {
     .rect(marble.x, marble.y, marble.width, marble.height).fill(palette.background);
   app.stage.addChild(background);
 
-  app.stage.addChild(label('MARBLE / LIVE', stream.width / 2, 118, 50));
-  app.stage.addChild(label('配信情報エリア', stream.width / 2, 268, 36));
-  app.stage.addChild(label('コメント・お知らせ・ゲーム説明', stream.width / 2, 326, 25, palette.muted));
-  app.stage.addChild(label('マーブル物理シミュレーション', stream.width / 2, 460, 22, palette.muted));
+  // Keep the reserved broadcast area quiet until it has actual content.
+  app.stage.addChild(new Graphics()
+    .circle(stream.width / 2 - 24, stream.height / 2, 12).fill(teams[0].color)
+    .circle(stream.width / 2 + 24, stream.height / 2, 12).fill(teams[1].color));
 
   const battleCenter = battle.y + battle.height / 2;
-  app.stage.addChild(label('戦闘ゾーン', battle.width / 2, battle.y + 90, 32, palette.muted));
-  app.stage.addChild(label('RED', battle.width * 0.25, battleCenter, 48, teams[0].color));
+  app.stage.addChild(new Graphics()
+    .circle(battle.width * 0.25, battleCenter, 24).fill(teams[0].color)
+    .circle(battle.width * 0.75, battleCenter, 24).fill(teams[1].color));
   app.stage.addChild(label('VS', battle.width / 2, battleCenter, 38, palette.muted));
-  app.stage.addChild(label('BLUE', battle.width * 0.75, battleCenter, 48, teams[1].color));
-  app.stage.addChild(label('出撃結果をログ出力中', battle.width / 2, battleCenter + 85, 25, palette.muted));
 
   const marbleView = new Container({ label: 'marble-zone' });
   marbleView.position.set(marble.x, marble.y);
