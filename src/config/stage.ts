@@ -97,12 +97,26 @@ export const palette = {
 };
 
 export const marblePresentation = {
+  effectIconSize: 14, // アイコンの最大幅・高さ（px）。
+  effectIconGap: 3, // リング外周から下側アイコンまでの間隔（px）。
   valueFontSize: 18, // 球の上の数値の文字サイズ（px）。
   slotFontSize: 24, // 倍率など穴のラベルの基本文字サイズ（px）。枠に収まるよう縮小される。
   valueGap: 2, // 球の上端と数値の下端の間隔（px）。
   rerollAfterimageCount: 9, // 再抽選の戻り経路に並べる球の残像数（正の整数）。
   rerollAfterimageOpacity: 0.85, // 残像の最大不透明度（0〜1）。大きいほど濃い。
 };
+
+// public/ 内の画像を BASE_URL 相対で指定。未設定・読込失敗時は色付き図形。
+export const effectPresentation: Record<string, { color: number; ringWidth: number; icon?: string }> = {
+  straight: { color: 0xffe84a, ringWidth: 3, icon: 'icons/straight.svg' },
+  left: { color: 0x25e4ed, ringWidth: 3, icon: 'icons/left.svg' },
+  right: { color: 0xf34de2, ringWidth: 3, icon: 'icons/right.svg' },
+  heal: { color: 0x48ee68, ringWidth: 3, icon: 'icons/heal.svg' },
+};
+export const defaultEffectPresentation = { color: 0xffffff, ringWidth: 3 };
+
+// 装置外周から通路中心までの距離と幅（px）。左右は陣営別に自動反転。
+export const deployPresentation = { width: 24, outerOffset: 18, bottomOffset: 18, topOffset: 18 };
 
 // 上段の表示設定。ゾーン名・色の変更は、内部の効果処理には影響しない。
 export const upperPresentation = {
@@ -141,7 +155,7 @@ export function createEffectSlots(groups = effectGroups): SlotDefinition[] {
 export const marbleConfig: MarbleConfig = {
   // 上段の効果抽選装置。x/yは陣営領域内の左上、width/heightは装置の幅/高さ（px）。
   upper: {
-    x: 4, y: 4, width: 532, height: 130,
+    x: 4, y: 60, width: 500, height: 130,
     title: '01  効果取得', // 装置名（設定検証時のエラー表示などに使用）。
     wallThickness: 5, // 外壁の厚み（px）。
     // 上段の基準点（装置内px）。x/yは配置検証用、radius/labelは目印のメタ情報。実際の発射口はupperPresentation.cannonから計算。
@@ -150,8 +164,8 @@ export const marbleConfig: MarbleConfig = {
     // 旧仕様の移動山。physics.obstacles.mountains.enabledで有効化。
     // id=動作設定と対応するID、x/y=中心位置、width/height=幅/高さ、topWidth=上面幅（0なら三角形、単位px）。
     mountains: [
-      { id: 'left', x: 266, y: 81.5, width: 18, height: 51, topWidth: 0 },
-      { id: 'right', x: 266, y: 81.5, width: 18, height: 51, topWidth: 0 },
+      { id: 'left', x: 250, y: 81.5, width: 18, height: 51, topWidth: 0 },
+      { id: 'right', x: 250, y: 81.5, width: 18, height: 51, topWidth: 0 },
     ],
     row: {
       inset: 0, // 壁内側から穴列までの余白（px）。
@@ -171,18 +185,18 @@ export const marbleConfig: MarbleConfig = {
   // 下段装置。上下の隙間はlower.y - (upper.y + upper.height)。球の直径より広く保つ。
   lower: {
     // x/y=陣営領域内の左上、width/height=装置の幅/高さ（px）。
-    x: 4, y: 154, width: 532, height: 422,
+    x: 4, y: 210, width: 500, height: 310,
     title: '02  倍率変更・出撃抽選', // 装置名（検証・識別用）。
     wallThickness: 5, // 外壁の厚み（px）。
     // x/y=運搬の到着点・再抽選の戻り先（装置内px）。radius/labelは目印のメタ情報で、現在は丸印を描画しない。
-    start: { x: 266, y: 26, radius: 10, label: 'ワープ先 / 再抽選' },
+    start: { x: 250, y: 26, radius: 10, label: 'ワープ先 / 再抽選' },
     // 下段の丸い障害物。描画と当たり判定は同じ設定を使用。
     pins: {
       radius: 7, // 障害物の半径（px）。
-      spacingX: 84, // 各行の横方向の中心間隔（px）。大きいほど横に疎になる。
-      spacingY: 46, // 行同士の縦方向の中心間隔（px）。自動追加の周期にも使用。
-      firstY: 76, // 最初の行の中心y（装置内px）。
-      centerX: 266, // 各行を中央揃えするx（装置内px）。
+      spacingX: 76, // 各行の横方向の中心間隔（px）。大きいほど横に疎になる。
+      spacingY: 38, // 行同士の縦方向の中心間隔（px）。自動追加の周期にも使用。
+      firstY: 66, // 最初の行の中心y（装置内px）。
+      centerX: 250, // 各行を中央揃えするx（装置内px）。
       rowCounts: [5, 6, 5, 6, 5, 6, 5], // 上から順に初期配置する行の個数。先頭2行の横配置を交互に追加する。
       spawnY: null, // 新しい行の中心y（装置内px）。nullなら底壁・半径・spawnBottomInsetから自動計算。
       spawnBottomInset: 1, // spawnYがnullのとき、底壁と障害物の間に空ける距離（px）。

@@ -59,8 +59,8 @@ export const physicsConfig = {
       enabled: false,
       // idはstage.upper.mountainsと対応。amplitude=横移動の片振幅(px)、period=往復秒数、phase=開始位相(1で1周期)。
       motions: [
-        { id: 'left', amplitude: 261, period: 4.8, phase: 0.75 },
-        { id: 'right', amplitude: 261, period: 4.8, phase: 0.25 },
+        { id: 'left', amplitude: 245, period: 4.8, phase: 0.75 },
+        { id: 'right', amplitude: 245, period: 4.8, phase: 0.25 },
       ],
     },
     // 下段の障害物を下から上へ流す設定。
@@ -83,7 +83,7 @@ export const physicsConfig = {
     lower: { speedMin: 170, speedMax: 300, angleMin: 20, angleMax: 160 },
   },
   // speed=上段から下段への非物理運搬速度（px/秒）。大きいほど早く運ぶ。
-  transfer: { speed: 220 },
+  transfer: { speed: 220, deploySpeed: 300 }, // deploySpeed=出撃後の運搬速度（px/秒）。
   // trailDuration=再抽選時の球の残像が消えるまでの秒数。濃さ・個数はstage.marblePresentation側。
   reroll: { trailDuration: 0.3 },
   // 上段の球生成と混雑時の制限。

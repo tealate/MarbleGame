@@ -188,7 +188,7 @@ export function createMarbleLayout(config: MarbleConfig): MarbleLayout {
   };
 }
 
-/** Mirror only the upper device; lower physics and labels keep their orientation. */
+/** Mirror upper contents and device bounds; lower contents keep their orientation. */
 export function layoutForTeam(layout: MarbleLayout, team: Team['id']): MarbleLayout {
   if (team === 'blue') return layout;
   const upper = structuredClone(layout.upper);
@@ -197,5 +197,10 @@ export function layoutForTeam(layout: MarbleLayout, team: Team['id']): MarbleLay
   upper.ramps = upper.ramps.map(points => points.map(p => ({ x: width - p.x, y: p.y })).reverse());
   upper.walls.forEach(w => { w.x = width - w.x - w.width; });
   upper.slots.forEach(s => { s.x = width - s.x - s.width; });
-  return { ...layout, upper };
+  // Keep the central cannon edge fixed while reserving the outer return lane.
+  const teamWidth = screenConfig.width / 2;
+  upper.bounds.x = teamWidth - upper.bounds.x - upper.bounds.width;
+  const lower = { ...layout.lower, bounds: { ...layout.lower.bounds,
+    x: teamWidth - layout.lower.bounds.x - layout.lower.bounds.width } };
+  return { ...layout, upper, lower };
 }

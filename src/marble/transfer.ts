@@ -1,7 +1,8 @@
-import type { Point } from '../config/stage';
+import { deployPresentation, type Point, type Team } from '../config/stage';
 import type { MarbleLayout } from './layout';
 
 export interface Transfer {
+  target: 'lower-start' | 'cannon';
   points: Point[];
   distance: number;
   previousDistance: number;
@@ -13,8 +14,24 @@ export function createTransfer(layout: MarbleLayout, from: Point): Transfer {
   const channelY = (upper.bounds.y + upper.bounds.height + lower.bounds.y) / 2;
   const end = { x: lower.bounds.x + lower.start.x, y: lower.bounds.y + lower.start.y };
   const points = [{ ...from }, { x: from.x, y: channelY }, { x: end.x, y: channelY }, end];
+  return fromPoints(points, 'lower-start');
+}
+
+/** Shared by route rendering and nonphysical travel; end is the cannon pivot. */
+export function createDeployTransfer(layout: MarbleLayout, team: Team['id'], from: Point, end: Point): Transfer {
+  const c = deployPresentation;
+  const bottom = layout.lower.bounds.y + layout.lower.bounds.height + c.bottomOffset;
+  const outer = team === 'red'
+    ? Math.min(layout.upper.bounds.x, layout.lower.bounds.x) - c.outerOffset
+    : Math.max(layout.upper.bounds.x + layout.upper.bounds.width, layout.lower.bounds.x + layout.lower.bounds.width) + c.outerOffset;
+  const top = layout.upper.bounds.y - c.topOffset;
+  return fromPoints([{ x: from.x, y: from.y }, { x: from.x, y: bottom },
+    { x: outer, y: bottom }, { x: outer, y: top }, { x: end.x, y: top }, { ...end }], 'cannon');
+}
+
+function fromPoints(points: Point[], target: Transfer['target']): Transfer {
   const length = points.slice(1).reduce((total, p, i) => total + Math.hypot(p.x - points[i].x, p.y - points[i].y), 0);
-  return { points, distance: 0, previousDistance: 0, length };
+  return { target, points, distance: 0, previousDistance: 0, length };
 }
 
 export function transferPose(transfer: Transfer, alpha = 1) {

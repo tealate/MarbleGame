@@ -1,10 +1,11 @@
-import { Container, Graphics, Text } from 'pixi.js';
-import { palette, upperPresentation, marblePresentation, type Team } from '../config/stage';
+import { Assets, Container, Graphics, Sprite, Text, type Texture } from 'pixi.js';
+import { palette, upperPresentation, marblePresentation, effectPresentation, defaultEffectPresentation,
+  deployPresentation, type Team } from '../config/stage';
 import type { DeviceLayout, MarbleLayout, SlotLayout } from './layout';
 import type { PhysicsConfig } from '../config/physics';
 import type { TeamSimulation } from './simulation';
-import { cannonPose } from './cannon';
-import { transferPose } from './transfer';
+import { cannonPivot, cannonPose } from './cannon';
+import { createDeployTransfer, transferPose } from './transfer';
 
 export function label(text: string, x: number, y: number, size: number, color = palette.text): Text {
   const item = new Text({
@@ -82,6 +83,21 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
   const view = new Container({ label: team.id });
   view.addChild(new Graphics()
     .rect(0, 0, width, height).fill({ color: team.color, alpha: 0.045 }));
+  // Behind the devices: only the outside lanes and bottom openings are visible.
+  const returnChannel = new Graphics({ label: 'deploy-channel' });
+  for (const slot of layout.lower.slots) {
+    if (slot.definition.action.kind !== 'deploy') continue;
+    const from = { x: layout.lower.bounds.x + slot.x + slot.width / 2,
+      y: layout.lower.bounds.y + layout.lower.bounds.height };
+    const route = createDeployTransfer(layout, team.id, from, cannonPivot(layout.upper, team.id));
+    for (const [width, color] of [[deployPresentation.width + 2, palette.line],
+      [deployPresentation.width, palette.panel], [1, team.color]]) {
+      returnChannel.moveTo(route.points[0].x, route.points[0].y);
+      route.points.slice(1).forEach(p => returnChannel.lineTo(p.x, p.y));
+      returnChannel.stroke({ width, color });
+    }
+  }
+  view.addChild(returnChannel);
   view.addChild(drawDevice(layout.upper, team, false));
   const lower = drawDevice(layout.lower, team, true);
   const pins = new Graphics({ label: 'pins' });
@@ -112,6 +128,19 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
     .lineTo(layout.upper.bounds.x + layout.upper.bounds.width - layout.upper.wallThickness, middle)
     .stroke({ width: 1, color: team.color, alpha: 0.25 });
   view.addChild(channel);
+  const openings = new Graphics({ label: 'deploy-openings' });
+  for (const slot of layout.lower.slots) {
+    if (slot.definition.action.kind !== 'deploy') continue;
+    // Accept any x within the result band, matching the physical sensor.
+    openings.rect(layout.lower.bounds.x + slot.x,
+      layout.lower.bounds.y + layout.lower.bounds.height - layout.lower.wallThickness,
+      slot.width, layout.lower.wallThickness + deployPresentation.bottomOffset + deployPresentation.width / 2)
+      .fill(palette.panel);
+  }
+  const pivot = cannonPivot(layout.upper, team.id);
+  openings.moveTo(pivot.x, layout.upper.bounds.y - deployPresentation.topOffset)
+    .lineTo(pivot.x, pivot.y).stroke({ width: deployPresentation.width, color: palette.panel });
+  view.addChild(openings);
   return view;
 }
 
@@ -130,7 +159,20 @@ export function createMarbleRenderer(parent: Container, team: Team, config: Phys
     .circle(0, 0, 12).fill(team.color)
     .circle(0, 0, 9).fill(palette.wall);
   parent.addChild(cannon);
-  const balls = new Map<number, { view: Container; shape: Graphics; value: Text }>();
+  const balls = new Map<number, { view: Container; shape: Graphics; value: Text;
+    ring: Graphics; fallback: Graphics; icon: Sprite; effectId?: string }>();
+  // Assets caches textures across teams. Never destroy these shared textures with a ball.
+  const icons = new Map<string, Texture | null>();
+  const iconTexture = (path: string): Texture | null => {
+    if (!icons.has(path)) {
+      icons.set(path, null);
+      const url = /^(?:[a-z]+:|\/)/i.test(path) ? path : `${import.meta.env.BASE_URL}${path}`;
+      void Assets.load<Texture>(url).then(texture => {
+        if (!layer.destroyed) icons.set(path, texture);
+      }).catch(() => { /* Keep the fallback for missing or invalid images. */ });
+    }
+    return icons.get(path) ?? null;
+  };
   const obstacles = new Map<number, Graphics>();
   return (state: TeamSimulation, alpha: number, showColliders: boolean, time = 0) => {
     const pose = cannonPose(state.physics.layout.upper, team.id, time, config);
@@ -167,13 +209,45 @@ export function createMarbleRenderer(parent: Container, team: Team, config: Phys
         value.anchor.set(0.5, 1);
         value.style.stroke = { color: palette.device, width: 3 };
         const view = new Container({ label: `marble-${marble.id}` });
-        view.addChild(shape, value);
-        ball = { view, shape, value };
+        const ring = new Graphics({ label: 'effect-ring' });
+        const fallback = new Graphics({ label: 'effect-fallback' });
+        const icon = new Sprite({ label: 'effect-icon' });
+        icon.anchor.set(0.5);
+        icon.visible = false;
+        view.addChild(ring, shape, fallback, icon, value);
+        ball = { view, shape, value, ring, fallback, icon };
         balls.set(marble.id, ball);
         layer.addChild(view);
       }
       const text = String(marble.value);
       if (ball.value.text !== text) ball.value.text = text;
+      const effect = marble.effectId === undefined ? undefined
+        : effectPresentation[marble.effectId] ?? defaultEffectPresentation;
+      if (ball.effectId !== marble.effectId) {
+        ball.effectId = marble.effectId;
+        ball.ring.clear();
+        ball.fallback.clear();
+        if (effect) {
+          const r = config.marble.radius;
+          ball.ring.circle(0, 0, r + effect.ringWidth / 2)
+            .stroke({ width: effect.ringWidth, color: effect.color });
+          const size = marblePresentation.effectIconSize;
+          const y = r + effect.ringWidth + marblePresentation.effectIconGap + size / 2;
+          ball.fallback.circle(0, y, size / 2).fill(effect.color)
+            .stroke({ width: 1, color: palette.device });
+          ball.icon.position.set(0, y);
+          ball.value.y = -r - effect.ringWidth - marblePresentation.valueGap;
+        }
+      }
+      const path = marble.effectId === undefined ? undefined : effectPresentation[marble.effectId]?.icon;
+      const texture = path ? iconTexture(path) : null;
+      ball.icon.visible = effect !== undefined && texture !== null;
+      ball.fallback.visible = effect !== undefined && texture === null;
+      if (texture && effect) {
+        ball.icon.texture = texture;
+        ball.icon.scale.set(marblePresentation.effectIconSize / Math.max(texture.width, texture.height));
+        ball.icon.tint = effect.color;
+      }
       const pose = marble.transfer ? transferPose(marble.transfer, alpha)
         : marble.rerollFrom ? { ...marble.rerollFrom, angle: 0 } : state.physics.pose(marble.id, alpha);
       ball.view.visible = pose !== undefined;

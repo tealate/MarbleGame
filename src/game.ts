@@ -11,7 +11,7 @@ export async function createGameScreen(app: Application) {
   const simulation = await MarbleSimulation.create(layout, physicsConfig, (event: MarbleEvent) => {
     const m = event.marble;
     lastEvent = `${m.team} #${m.id} ${event.type} 値=${m.value} 効果=${m.effectId ?? '-'}${event.reason ? ` (${event.reason})` : ''}`;
-    if (event.type === 'deploy' || event.type === 'retire' || physicsConfig.debug.logTransitions) {
+    if (event.type === 'deploy' || event.type === 'cannon-arrival' || event.type === 'retire' || physicsConfig.debug.logTransitions) {
       console.info(`[marble:${event.type}]`, { team: m.team, id: m.id, value: m.value,
         effectId: m.effectId, rerolls: m.rerolls, reason: event.reason });
     }

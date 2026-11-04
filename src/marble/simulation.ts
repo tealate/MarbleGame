@@ -2,7 +2,7 @@ import { physicsConfig, type PhysicsConfig } from '../config/physics';
 import { teams, type Team, type SlotAction, type Point } from '../config/stage';
 import { layoutForTeam, type MarbleLayout } from './layout';
 import { cannonPose } from './cannon';
-import { createTransfer, type Transfer } from './transfer';
+import { createTransfer, createDeployTransfer, type Transfer } from './transfer';
 import { initializePhysics, MarblePhysics, type Stage } from './physics';
 
 export interface MarbleState {
@@ -19,7 +19,7 @@ export interface MarbleState {
   age: number;
 }
 export type MarbleEvent = {
-  type: 'effect' | 'multiplier' | 'deploy' | 'retire';
+  type: 'effect' | 'multiplier' | 'deploy' | 'cannon-arrival' | 'retire';
   marble: Readonly<MarbleState>;
   reason?: 'reroll-limit' | 'lifetime-limit' | 'out-of-bounds';
 };
@@ -33,7 +33,7 @@ export interface TeamSimulation {
 
 /** Rules know slot meanings, but nothing about Rapier or Pixi. */
 export function applySlot(marble: MarbleState, action: SlotAction, config: PhysicsConfig): MarbleEvent | undefined {
-  if (marble.waiting) return;
+  if (marble.waiting || marble.transfer) return;
   if (action.kind === 'effect') {
     if (marble.stage !== 'upper' || marble.effectId !== undefined) return;
     marble.effectId = action.effectId;
@@ -42,7 +42,10 @@ export function applySlot(marble: MarbleState, action: SlotAction, config: Physi
     return { type: 'effect', marble: { ...marble } };
   }
   if (marble.stage !== 'lower' || marble.effectId === undefined) return;
-  if (action.kind === 'deploy') return { type: 'deploy', marble: { ...marble } };
+  if (action.kind === 'deploy') {
+    marble.waiting = true;
+    return { type: 'deploy', marble: { ...marble } };
+  }
   marble.value = Math.min(config.rules.maxValue, marble.value * action.factor);
   marble.rerolls++;
   if (marble.rerolls > config.rules.maxRerolls) {
@@ -61,7 +64,7 @@ function validate(layout: MarbleLayout, c: PhysicsConfig): void {
   finite(c);
   finite(layout);
   for (const [key, value] of Object.entries({ ...c.simulation, radius: c.marble.radius,
-    transferSpeed: c.transfer.speed, trailDuration: c.reroll.trailDuration,
+    transferSpeed: c.transfer.speed, deploySpeed: c.transfer.deploySpeed, trailDuration: c.reroll.trailDuration,
     density: c.marble.density, maxSpeed: c.marble.maxSpeed, maxFallSpeed: c.marble.maxFallSpeed, interval: c.spawn.interval,
     maxPerTeam: c.spawn.maxPerTeam, batchSize: c.spawn.batchSize, maxLifetime: c.rules.maxLifetime,
     initialValue: c.rules.initialValue, maxValue: c.rules.maxValue })) {
@@ -226,8 +229,7 @@ export class MarbleSimulation {
   private finish(team: TeamSimulation, marble: MarbleState, event: MarbleEvent): void {
     team.physics.remove(marble.id);
     team.marbles.delete(marble.id);
-    if (event.type === 'deploy') team.stats.deployed++;
-    else team.stats.retired++;
+    if (event.type === 'retire') team.stats.retired++;
     this.onEvent(event);
   }
 
@@ -248,8 +250,11 @@ export class MarbleSimulation {
         } else if (marble.transfer) {
           const transfer = marble.transfer;
           transfer.previousDistance = transfer.distance;
-          transfer.distance = Math.min(transfer.length, transfer.distance + this.config.transfer.speed * dt);
-          if (transfer.distance >= transfer.length && team.physics.isStartClear('lower')) {
+          const speed = transfer.target === 'cannon' ? this.config.transfer.deploySpeed : this.config.transfer.speed;
+          transfer.distance = Math.min(transfer.length, transfer.distance + speed * dt);
+          if (transfer.distance >= transfer.length && transfer.target === 'cannon') {
+            this.finish(team, marble, { type: 'cannon-arrival', marble: { ...marble } });
+          } else if (transfer.distance >= transfer.length && team.physics.isStartClear('lower')) {
             team.physics.add(marble.id, transfer.points[transfer.points.length - 1],
               this.velocity('lower'));
             delete marble.transfer;
@@ -281,7 +286,14 @@ export class MarbleSimulation {
         if (!marble || marble.stage !== arrival.stage) continue;
         const event = applySlot(marble, arrival.slot.definition.action, this.config);
         if (!event) continue;
-        if (event.type === 'deploy' || event.type === 'retire') this.finish(team, marble, event);
+        if (event.type === 'deploy') {
+          marble.transfer = createDeployTransfer(team.physics.layout, marble.team, team.physics.pose(marble.id)!,
+            cannonPose(team.physics.layout.upper, marble.team, this.time, this.config).pivot);
+          delete marble.rerollTrail;
+          team.physics.remove(marble.id);
+          team.stats.deployed++;
+          this.onEvent(event);
+        } else if (event.type === 'retire') this.finish(team, marble, event);
         else {
           if (event.type === 'effect') {
             marble.transfer = createTransfer(team.physics.layout, team.physics.pose(marble.id)!);
