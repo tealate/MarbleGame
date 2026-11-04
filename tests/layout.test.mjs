@@ -131,13 +131,13 @@ test('open result bands cover the floor with no plates, even after resizing', ()
 });
 
 
-test('bowl row meets both walls and staggered pins fill the edges', () => {
+test('bowl row reserves the cannon base and meets the outer wall and staggered pins fill the edges', () => {
   const l = createMarbleLayout(marbleConfig);
   assert.equal(marbleConfig.upper.row.entrance, 'bowl');
-  assert.equal(l.upper.slots[0].x, l.upper.wallThickness);
+  assert.equal(l.upper.slots[0].x, l.upper.wallThickness + marbleConfig.upper.row.innerInset);
   const last = l.upper.slots.at(-1);
   assert.ok(Math.abs(last.x + last.width - (l.upper.bounds.width - l.upper.wallThickness)) < 1e-8);
-  for (const slot of l.upper.slots) assert.ok(slot.solids[0][1].y > slot.solids[0][0].y);
+  for (const slot of l.upper.slots) assert.equal(slot.solids[0][1].y, slot.solids[0][0].y);
   for (const m of l.mountains) {
     const overlap = m.position.y + m.height / 2 - l.upper.slots[0].y;
     assert.equal(overlap, 6);

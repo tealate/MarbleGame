@@ -1,6 +1,7 @@
 import { physicsConfig, type PhysicsConfig } from '../config/physics';
 import { teams, type Team, type SlotAction, type Point } from '../config/stage';
-import type { MarbleLayout } from './layout';
+import { layoutForTeam, type MarbleLayout } from './layout';
+import { cannonPose } from './cannon';
 import { initializePhysics, MarblePhysics, type Stage } from './physics';
 
 export interface MarbleState {
@@ -74,6 +75,7 @@ function validate(layout: MarbleLayout, c: PhysicsConfig): void {
     if (launch.speedMin < 0 || launch.speedMax < launch.speedMin || launch.speedMax > c.marble.maxSpeed
       || launch.angleMax < launch.angleMin) fail('invalid launch range');
   }
+  if (c.launch.upper.swingPeriod <= 0 || c.launch.upper.angleMin <= -80 || c.launch.upper.angleMax >= 80) fail('invalid cannon swing');
   for (const stage of ['upper', 'lower'] as const) {
     const device = layout[stage];
     const r = c.marble.radius;
@@ -153,6 +155,7 @@ export class MarbleSimulation {
   readonly teams: TeamSimulation[];
   readonly config: PhysicsConfig;
   private accumulator = 0;
+  time = 0;
   private nextId = 1;
   private disposed = false;
 
@@ -167,7 +170,7 @@ export class MarbleSimulation {
   private constructor(layout: MarbleLayout, config: PhysicsConfig,
     private readonly onEvent: (event: MarbleEvent) => void, private readonly random: () => number) {
     this.config = config;
-    this.teams = teams.map(() => ({ physics: new MarblePhysics(layout, config), marbles: new Map(),
+    this.teams = teams.map((team) => ({ physics: new MarblePhysics(layoutForTeam(layout, team.id), config), marbles: new Map(),
       spawnCountdown: 0, pendingSpawns: 0,
       stats: { spawned: 0, effects: 0, multipliers: 0, deployed: 0, retired: 0 } }));
   }
@@ -184,11 +187,15 @@ export class MarbleSimulation {
     if (this.disposed) return;
     const index = teams.findIndex((team) => team.id === teamId);
     const team = this.teams[index];
-    if (!team || team.marbles.size >= this.config.spawn.maxPerTeam || !team.physics.isStartClear('upper')) return;
+    if (!team || team.marbles.size >= this.config.spawn.maxPerTeam) return;
+    const cannon = cannonPose(team.physics.layout.upper, teamId, this.time, this.config);
+    if (!team.physics.isCircleClear(cannon.muzzle, this.config.marble.radius)) return;
     const id = this.nextId++;
     const marble: MarbleState = { id, team: teamId, stage: 'upper', waiting: false,
       value: this.config.rules.initialValue, rerolls: 0, age: 0 };
-    team.physics.add(id, team.physics.start('upper'), this.velocity('upper'));
+    const launch = this.config.launch.upper;
+    const speed = launch.speedMin + (launch.speedMax - launch.speedMin) * this.random();
+    team.physics.add(id, cannon.muzzle, { x: cannon.direction.x * speed, y: cannon.direction.y * speed });
     team.marbles.set(id, marble);
     team.stats.spawned++;
     return id;
@@ -221,6 +228,7 @@ export class MarbleSimulation {
 
   private tick(): void {
     const dt = this.config.simulation.fixedTimeStep;
+    this.time += dt;
     this.teams.forEach((team, index) => {
       // Warp bodies are removed at arrival. Retry the shared start on later ticks
       // if occupied; waiting marbles still count toward the cap and lifetime.

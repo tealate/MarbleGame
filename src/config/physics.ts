@@ -49,7 +49,7 @@ export const physicsConfig = {
     },
   },
   launch: {
-    upper: { speedMin: 260, speedMax: 460, angleMin: -65, angleMax: 20 },
+    upper: { speedMin: 260, speedMax: 460, angleMin: -25, angleMax: 20, swingPeriod: 3.6 },
     lower: { speedMin: 170, speedMax: 300, angleMin: 20, angleMax: 160 },
   },
   spawn: {

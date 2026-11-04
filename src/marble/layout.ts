@@ -1,6 +1,6 @@
 import {
   screenConfig,
-  type DeviceConfig, type MarbleConfig, type Point, type Rect, type SlotDefinition,
+  type Team, type DeviceConfig, type MarbleConfig, type Point, type Rect, type SlotDefinition,
 } from '../config/stage';
 
 export interface SlotLayout extends Rect {
@@ -44,7 +44,7 @@ export function createScreenLayout(config = screenConfig) {
 
 function createDevice(config: DeviceConfig): DeviceLayout {
   const { x, y, width, height, wallThickness: wall, row } = config;
-  const available = width - 2 * (wall + row.inset) - row.gap * (row.slots.length - 1);
+  const available = width - (row.innerInset ?? 0) - 2 * (wall + row.inset) - row.gap * (row.slots.length - 1);
   const fixed = row.slots.reduce((sum, slot) => sum + (slot.width ?? 0), 0);
   const automatic = row.slots.filter((slot) => slot.width === undefined).length;
   const defaultWidth = automatic ? (available - fixed) / automatic : 0;
@@ -53,7 +53,7 @@ function createDevice(config: DeviceConfig): DeviceLayout {
     throw new Error(`Invalid device or slot row dimensions: ${config.title}`);
   }
   const ids = new Set<string>();
-  let nextX = wall + row.inset;
+  let nextX = wall + row.inset + (row.innerInset ?? 0);
   const slots = row.slots.map((definition): SlotLayout => {
     const slotWidth = definition.width ?? defaultWidth;
     const slotHeight = definition.height ?? row.height;
@@ -88,11 +88,16 @@ function createDevice(config: DeviceConfig): DeviceLayout {
       const segments = row.bowlSegments ?? 8;
       if (!Number.isInteger(segments) || segments < 2 || segments > 32) throw new Error('bowlSegments must be 2..32');
       solids.length = 0;
-      // Smoothstep shoulders: horizontal tangents at the shared rim and mouth.
+      // Optional flat shoulders form low trapezoids; otherwise use smoothstep bowls.
       // Each convex strip is used unchanged by Pixi and Rapier.
       for (let i = 0; i < segments; i++) {
         const a = i / segments, b = (i + 1) / segments;
-        const surface = (t: number) => (-slopeHeight * (1 - t * t * (3 - 2 * t))) || 0;
+        const surface = (t: number) => {
+          if (row.plateau === undefined) return (-slopeHeight * (1 - t * t * (3 - 2 * t))) || 0;
+          const plateau = row.plateau;
+          if (plateau < 0 || plateau >= 1) throw new Error('plateau must be 0..1');
+          return -slopeHeight * (1 - Math.max(0, (t - plateau) / (1 - plateau))) || 0;
+        };
         const x1 = left * a, x2 = left * b;
         const y1 = surface(a), y2 = surface(b);
         if (left > 0) {
@@ -169,4 +174,15 @@ export function createMarbleLayout(config: MarbleConfig): MarbleLayout {
       despawnY: pins.despawnY, spacingY: pins.spacingY, radius: pins.radius, rows,
     },
   };
+}
+
+/** Mirror only the upper device; lower physics and labels keep their orientation. */
+export function layoutForTeam(layout: MarbleLayout, team: Team['id']): MarbleLayout {
+  if (team === 'blue') return layout;
+  const upper = structuredClone(layout.upper);
+  const width = upper.bounds.width;
+  upper.start.x = width - upper.start.x;
+  upper.walls.forEach(w => { w.x = width - w.x - w.width; });
+  upper.slots.forEach(s => { s.x = width - s.x - s.width; });
+  return { ...layout, upper };
 }

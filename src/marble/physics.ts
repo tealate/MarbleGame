@@ -83,7 +83,7 @@ export class MarblePhysics {
     return this.isCircleClear(this.start(stage), this.config.marble.radius);
   }
 
-  private isCircleClear(position: Point, radius: number): boolean {
+  isCircleClear(position: Point, radius: number): boolean {
     const distance = this.config.marble.radius + radius + this.config.spawn.clearance;
     for (const { body } of this.marbles.values()) {
       const p = body.translation();

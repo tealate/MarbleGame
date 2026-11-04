@@ -1,5 +1,5 @@
 import { Application, Container, Graphics } from 'pixi.js';
-import { marbleConfig, palette, teams } from './config/stage';
+import { marbleConfig, palette, teams, upperPresentation } from './config/stage';
 import { createMarbleLayout, createScreenLayout } from './marble/layout';
 import { createMarbleRenderer, createMarbleTeam, label } from './marble/render';
 import { MarbleSimulation, type MarbleEvent } from './marble/simulation';
@@ -38,16 +38,29 @@ export async function createGameScreen(app: Application) {
   marbleView.position.set(marble.x, marble.y);
   const renderers: ReturnType<typeof createMarbleRenderer>[] = [];
   teams.forEach((team, index) => {
-    const view = createMarbleTeam(layout, team, teamWidth, marble.height, simulation.config.obstacles.pinFlow.enabled);
+    const view = createMarbleTeam(simulation.teams[index].physics.layout, team, teamWidth, marble.height, simulation.config.obstacles.pinFlow.enabled);
     view.x = index * teamWidth;
     marbleView.addChild(view);
     renderers.push(createMarbleRenderer(view, team, simulation.config));
   });
+  // One split central housing covers both barrel pivots symmetrically.
+  const housing = new Graphics();
+  const centerY = layout.upper.bounds.y + upperPresentation.cannon.pivotY;
+  teams.forEach((team, i) => {
+    const points = [{ x: teamWidth, y: centerY }];
+    for (let step = 0; step <= 24; step++) {
+      const angle = -Math.PI / 2 + step / 24 * Math.PI;
+      points.push({ x: teamWidth + (i === 0 ? -1 : 1) * Math.cos(angle) * upperPresentation.cannon.hubRadius,
+        y: centerY + Math.sin(angle) * upperPresentation.cannon.hubRadius });
+    }
+    housing.poly(points).fill(team.color);
+  });
+  marbleView.addChild(housing);
   app.stage.addChild(marbleView);
   app.stage.addChild(new Graphics()
     .moveTo(0, battle.y).lineTo(battle.width, battle.y)
     .moveTo(0, marble.y).lineTo(marble.width, marble.y)
-    .moveTo(teamWidth, marble.y).lineTo(teamWidth, marble.y + marble.height)
+    .moveTo(teamWidth, marble.y + layout.lower.bounds.y).lineTo(teamWidth, marble.y + marble.height)
     .stroke({ width: 2, color: palette.line }));
 
   // Opt-in diagnostics keep the normal game layout unchanged.
@@ -82,7 +95,7 @@ export async function createGameScreen(app: Application) {
     simulation,
     update(seconds: number) {
       if (!paused) simulation.advance(seconds);
-      renderers.forEach((render, i) => render(simulation.teams[i], paused ? 1 : simulation.alpha, showColliders));
+      renderers.forEach((render, i) => render(simulation.teams[i], paused ? 1 : simulation.alpha, showColliders, simulation.time));
       if (status) {
         const text = simulation.teams.map((team, i) => {
           const s = team.stats;

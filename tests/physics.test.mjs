@@ -53,7 +53,7 @@ function dropInto(sim, id, stage, slotIndex) {
   assert.equal(marble.stage, stage);
   // Allow the real warp to finish before setting up the next controlled drop.
   while (marble.waiting) sim.advance(sim.config.simulation.fixedTimeStep);
-  const device = layout[stage];
+  const device = team.physics.layout[stage];
   const slot = device.slots[slotIndex];
   team.physics.remove(id);
   team.physics.add(id, {
@@ -189,7 +189,7 @@ test('gravity, launch speed, radius and material configuration affect real bodie
   const { sim: second } = await simulation(t, b);
   const i = first.spawn('red'), j = second.spawn('red');
   advance(first, 0.1); advance(second, 0.1);
-  assert.ok(second.teams[0].physics.pose(j).x > first.teams[0].physics.pose(i).x + 8);
+  assert.ok(second.teams[0].physics.pose(j).x < first.teams[0].physics.pose(i).x - 8);
   assert.ok(second.teams[0].physics.pose(j).y > first.teams[0].physics.pose(i).y + 1);
   const collider = [...second.teams[0].physics.world.bodies.getAll()][0].collider(0);
   assert.ok(Math.abs(collider.radius() * b.simulation.pixelsPerMeter - 6) < 0.001);
@@ -614,5 +614,44 @@ test('balls roll down the shared bowl shoulders into effect sensors', (t) => {
     assert.ok(found, slot.definition.id);
     assert.equal(found.stage, 'upper');
     p.remove(i + 1);
+  }
+});
+
+
+test('mirrored cannons launch outward from their swinging muzzles at every phase', async (t) => {
+  const { cannonPose } = await server.ssrLoadModule('/src/marble/cannon.ts');
+  const c = config();
+  const { sim } = await simulation(t, c);
+  for (const phase of [0, 0.25, 0.5, 0.75]) {
+    sim.time = phase * c.launch.upper.swingPeriod;
+    const poses = [];
+    for (const [index, name] of ['red', 'blue'].entries()) {
+      const team = sim.teams[index];
+      const pose = cannonPose(team.physics.layout.upper, name, sim.time, c);
+      poses.push(pose);
+      const id = sim.spawn(name);
+      assert.ok(id);
+      const actual = team.physics.pose(id);
+      assert.ok(Math.hypot(actual.x - pose.muzzle.x, actual.y - pose.muzzle.y) < 0.001);
+      const body = team.physics.world.bodies.getAll()[0];
+      const velocity = body.linvel();
+      assert.ok(name === 'red' ? velocity.x < 0 : velocity.x > 0);
+      assert.ok(Math.abs(velocity.y / velocity.x - pose.direction.y / pose.direction.x) < 0.001);
+      team.physics.remove(id); team.marbles.delete(id);
+    }
+    assert.ok(Math.abs(poses[0].muzzle.x + poses[1].muzzle.x - 540) < 0.001);
+    assert.equal(poses[0].muzzle.y, poses[1].muzzle.y);
+  }
+});
+
+test('all mirrored red holes preserve their original effect actions', async (t) => {
+  const { sim } = await simulation(t);
+  for (let index = 0; index < layout.upper.slots.length; index++) {
+    const id = sim.spawn('red');
+    assert.ok(id);
+    dropInto(sim, id, 'upper', index);
+    const team = sim.teams[0];
+    assert.equal(team.marbles.get(id).effectId, layout.upper.slots[index].definition.action.effectId);
+    team.physics.remove(id); team.marbles.delete(id);
   }
 });
