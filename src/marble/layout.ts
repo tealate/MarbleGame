@@ -19,6 +19,7 @@ export interface DeviceLayout {
   title: string;
   wallThickness: number;
   walls: Rect[];
+  ramps: Point[][]; // 装置内座標。描画と物理で共有する斜面。
   start: DeviceConfig['start'];
   slots: SlotLayout[];
 }
@@ -88,7 +89,7 @@ function createDevice(config: DeviceConfig): DeviceLayout {
       const segments = row.bowlSegments ?? 8;
       if (!Number.isInteger(segments) || segments < 2 || segments > 32) throw new Error('bowlSegments must be 2..32');
       solids.length = 0;
-      // Optional flat shoulders form low trapezoids; otherwise use smoothstep bowls.
+      // Optional shallow shoulders form low trapezoids; otherwise use smoothstep bowls.
       // Each convex strip is used unchanged by Pixi and Rapier.
       for (let i = 0; i < segments; i++) {
         const a = i / segments, b = (i + 1) / segments;
@@ -96,7 +97,10 @@ function createDevice(config: DeviceConfig): DeviceLayout {
           if (row.plateau === undefined) return (-slopeHeight * (1 - t * t * (3 - 2 * t))) || 0;
           const plateau = row.plateau;
           if (plateau < 0 || plateau >= 1) throw new Error('plateau must be 0..1');
-          return -slopeHeight * (1 - Math.max(0, (t - plateau) / (1 - plateau))) || 0;
+          const drop = row.plateauDrop ?? 0;
+          if (!Number.isFinite(drop) || drop < 0 || drop > slopeHeight) throw new Error('plateauDrop must be 0..funnelHeight');
+          if (plateau > 0 && t <= plateau) return -slopeHeight + drop * t / plateau;
+          return -(slopeHeight - (plateau > 0 ? drop : 0)) * (1 - (t - plateau) / (1 - plateau)) || 0;
         };
         const x1 = left * a, x2 = left * b;
         const y1 = surface(a), y2 = surface(b);
@@ -121,9 +125,17 @@ function createDevice(config: DeviceConfig): DeviceLayout {
   // Close only the gaps BETWEEN pockets, never their openings. These small caps
   // are visible as well as solid, so smaller marbles cannot fall behind the row.
   const caps: Rect[] = [];
+  const ramps: Point[][] = [];
+  const rise = row.innerSlopeHeight ?? 0;
+  if (!Number.isFinite(rise) || rise < 0) throw new Error('innerSlopeHeight must be nonnegative');
   let previousRight = wall;
-  slots.forEach((slot) => {
-    if (slot.x > previousRight) caps.push({ x: previousRight,
+  slots.forEach((slot, index) => {
+    if (index === 0 && rise > 0 && slot.x > previousRight && row.entrance !== 'open') {
+      const edge = slot.y + slot.outerEdgeY;
+      if (edge - rise <= wall) throw new Error('innerSlopeHeight reaches ceiling');
+      ramps.push([{ x: previousRight, y: edge - rise }, { x: slot.x, y: edge },
+        { x: slot.x, y: edge + Math.min(wall, 3) }, { x: previousRight, y: edge + Math.min(wall, 3) }]);
+    } else if (slot.x > previousRight) caps.push({ x: previousRight,
       y: slot.y + slot.outerEdgeY, width: slot.x - previousRight, height: Math.min(wall, 3) });
     previousRight = slot.x + slot.width;
   });
@@ -132,7 +144,7 @@ function createDevice(config: DeviceConfig): DeviceLayout {
     y: last.y + last.outerEdgeY, width: width - wall - previousRight, height: Math.min(wall, 3) });
   return {
     bounds: { x, y, width, height }, title: config.title, wallThickness: wall,
-    start: { ...config.start }, slots,
+    start: { ...config.start }, slots, ramps,
     walls: [
       { x: 0, y: 0, width, height: wall },
       { x: 0, y: wall, width: wall, height: height - 2 * wall },
@@ -182,6 +194,7 @@ export function layoutForTeam(layout: MarbleLayout, team: Team['id']): MarbleLay
   const upper = structuredClone(layout.upper);
   const width = upper.bounds.width;
   upper.start.x = width - upper.start.x;
+  upper.ramps = upper.ramps.map(points => points.map(p => ({ x: width - p.x, y: p.y })).reverse());
   upper.walls.forEach(w => { w.x = width - w.x - w.width; });
   upper.slots.forEach(s => { s.x = width - s.x - s.width; });
   return { ...layout, upper };

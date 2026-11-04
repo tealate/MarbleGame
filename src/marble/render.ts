@@ -1,9 +1,10 @@
 import { Container, Graphics, Text } from 'pixi.js';
-import { palette, upperPresentation, type Team } from '../config/stage';
+import { palette, upperPresentation, marblePresentation, type Team } from '../config/stage';
 import type { DeviceLayout, MarbleLayout, SlotLayout } from './layout';
 import type { PhysicsConfig } from '../config/physics';
 import type { TeamSimulation } from './simulation';
 import { cannonPose } from './cannon';
+import { transferPose } from './transfer';
 
 export function label(text: string, x: number, y: number, size: number, color = palette.text): Text {
   const item = new Text({
@@ -40,7 +41,7 @@ function drawSlot(slot: SlotLayout, effectColor?: number): Container {
   }
   const text = definition.action.kind === 'multiplier' ? `×${definition.action.factor}`
     : definition.label;
-  const title = label(text, width / 2, height / 2, 21, definition.color);
+  const title = label(text, width / 2, height / 2, marblePresentation.slotFontSize, definition.color);
   const fit = Math.min(1, Math.max(1, width - 8) / title.width, Math.max(1, height - 4) / title.height);
   title.scale.set(fit);
   view.addChild(title);
@@ -53,8 +54,7 @@ function drawDevice(device: DeviceLayout, team: Team, isLower: boolean): Contain
   const graphics = new Graphics()
     .rect(0, 0, device.bounds.width, device.bounds.height).fill(palette.device);
   device.walls.forEach((wall) => graphics.rect(wall.x, wall.y, wall.width, wall.height).fill(palette.wall));
-  const start = device.start;
-  if (isLower) graphics.circle(start.x, start.y, start.radius).stroke({ width: 3, color: team.color });
+  device.ramps.forEach(points => graphics.poly(points).fill(palette.wall));
   view.addChild(graphics);
   if (!isLower) {
     for (const zone of upperPresentation.zones) {
@@ -95,6 +95,23 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
     rails.rect(device.bounds.x, device.bounds.y, device.bounds.width, 3).fill(team.color);
   }
   view.addChild(rails);
+  // Nonphysical conveyor openings and channel are drawn over the device rims.
+  const channel = new Graphics({ label: 'transfer-channel' });
+  const top = layout.upper.bounds.y + layout.upper.bounds.height;
+  const gap = layout.lower.bounds.y - top;
+  const middle = top + gap / 2;
+  channel.rect(layout.upper.bounds.x, top, layout.upper.bounds.width, gap).fill(palette.panel);
+  for (const slot of layout.upper.slots) {
+    const x = layout.upper.bounds.x + slot.x + slot.width / 2;
+    channel.rect(x - slot.openingWidth / 2, top - layout.upper.wallThickness,
+      slot.openingWidth, layout.upper.wallThickness).fill(palette.panel);
+  }
+  const entryX = layout.lower.bounds.x + layout.lower.start.x;
+  channel.rect(entryX - gap / 2, layout.lower.bounds.y, gap, layout.lower.wallThickness).fill(palette.panel);
+  channel.moveTo(layout.upper.bounds.x + layout.upper.wallThickness, middle)
+    .lineTo(layout.upper.bounds.x + layout.upper.bounds.width - layout.upper.wallThickness, middle)
+    .stroke({ width: 1, color: team.color, alpha: 0.25 });
+  view.addChild(channel);
   return view;
 }
 
@@ -103,7 +120,8 @@ export function createMarbleRenderer(parent: Container, team: Team, config: Phys
   const layer = new Container({ label: 'moving-marbles' });
   const obstacleLayer = new Container({ label: 'moving-obstacles' });
   const debug = new Graphics({ label: 'physics-colliders' });
-  parent.addChild(obstacleLayer, layer, debug);
+  const trails = new Graphics({ label: 'reroll-trails' });
+  parent.addChild(obstacleLayer, trails, layer, debug);
   const cannon = new Graphics({ label: 'swinging-cannon' });
   const c = upperPresentation.cannon;
   cannon.roundRect(0, -c.width / 2, c.length, c.width, 3).fill(team.color)
@@ -112,7 +130,7 @@ export function createMarbleRenderer(parent: Container, team: Team, config: Phys
     .circle(0, 0, 12).fill(team.color)
     .circle(0, 0, 9).fill(palette.wall);
   parent.addChild(cannon);
-  const balls = new Map<number, Graphics>();
+  const balls = new Map<number, { view: Container; shape: Graphics; value: Text }>();
   const obstacles = new Map<number, Graphics>();
   return (state: TeamSimulation, alpha: number, showColliders: boolean, time = 0) => {
     const pose = cannonPose(state.physics.layout.upper, team.id, time, config);
@@ -134,21 +152,48 @@ export function createMarbleRenderer(parent: Container, team: Team, config: Phys
         item.previous.y + (item.position.y - item.previous.y) * alpha);
     }
     for (const [id, ball] of balls) {
-      if (!state.marbles.has(id)) { ball.destroy(); balls.delete(id); }
+      if (!state.marbles.has(id)) { ball.view.destroy({ children: true }); balls.delete(id); }
     }
+    trails.clear();
     for (const marble of state.marbles.values()) {
       let ball = balls.get(marble.id);
       if (!ball) {
         const r = config.marble.radius;
-        ball = new Graphics().circle(0, 0, r).fill(team.color)
+        const shape = new Graphics().circle(0, 0, r).fill(team.color)
           .stroke({ width: 1, color: 0xffffff })
           .circle(r * 0.35, -r * 0.3, r * 0.23).fill(0xffffff);
+        const value = label(String(marble.value), 0, -r - marblePresentation.valueGap, marblePresentation.valueFontSize);
+        value.label = 'marble-value';
+        value.anchor.set(0.5, 1);
+        value.style.stroke = { color: palette.device, width: 3 };
+        const view = new Container({ label: `marble-${marble.id}` });
+        view.addChild(shape, value);
+        ball = { view, shape, value };
         balls.set(marble.id, ball);
-        layer.addChild(ball);
+        layer.addChild(view);
       }
-      const pose = state.physics.pose(marble.id, alpha);
-      ball.visible = pose !== undefined;
-      if (pose) { ball.position.set(pose.x, pose.y); ball.rotation = pose.angle; }
+      const text = String(marble.value);
+      if (ball.value.text !== text) ball.value.text = text;
+      const pose = marble.transfer ? transferPose(marble.transfer, alpha)
+        : marble.rerollFrom ? { ...marble.rerollFrom, angle: 0 } : state.physics.pose(marble.id, alpha);
+      ball.view.visible = pose !== undefined;
+      if (pose) { ball.view.position.set(pose.x, pose.y); ball.shape.rotation = pose.angle; }
+      const trail = marble.rerollTrail;
+      if (trail) {
+        const opacity = Math.max(0, Math.min(1, trail.remaining / config.reroll.trailDuration));
+        const count = marblePresentation.rerollAfterimageCount;
+        for (let i = 0; i < count; i++) {
+          const t = i / count;
+          const x = trail.from.x + (trail.to.x - trail.from.x) * t;
+          const y = trail.from.y + (trail.to.y - trail.from.y) * t;
+          // Older silhouettes are fainter and disappear first; no connecting line.
+          const fade = Math.pow(opacity, 1.3 - 0.3 * t) * (0.65 + 0.35 * t);
+          const alpha = fade * marblePresentation.rerollAfterimageOpacity;
+          const r = config.marble.radius;
+          trails.circle(x, y, r).fill({ color: team.color, alpha })
+            .circle(x + r * 0.35, y - r * 0.3, r * 0.23).fill({ color: 0xffffff, alpha });
+        }
+      }
     }
     debug.clear();
     if (showColliders) {

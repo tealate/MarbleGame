@@ -22,7 +22,7 @@ test('default devices, starts, pins and slots fit inside their local areas', () 
   const layout = createMarbleLayout(marbleConfig);
   assert.equal(layout.upper.slots.length, 7);
   assert.equal(layout.lower.slots.length, 5);
-  assert.equal(layout.pins.length, 67);
+  assert.equal(layout.pins.length, 38);
   assert.equal(540 - layout.lower.bounds.width, 8, 'central gap is 8px');
   assert.equal(layout.lower.bounds.y + layout.lower.bounds.height, 576, 'device reaches screen bottom');
   assert.equal(layout.pinFlow.spawnY + layout.pinFlow.radius, layout.lower.bounds.height - 6);
@@ -95,7 +95,7 @@ test('explicit pin positions override rows and remain JSON serializable', () => 
   const config = structuredClone(marbleConfig);
   config.lower.pins.positions = [{ x: 40, y: 100 }, { x: 90, y: 140 }];
   const layout = createMarbleLayout(config);
-  assert.deepEqual(layout.pins, [{ x: 40, y: 100, radius: 5 }, { x: 90, y: 140, radius: 5 }]);
+  assert.deepEqual(layout.pins, [{ x: 40, y: 100, radius: 7 }, { x: 90, y: 140, radius: 7 }]);
   assert.deepEqual(JSON.parse(JSON.stringify(layout)), layout);
 });
 
@@ -137,15 +137,15 @@ test('bowl row reserves the cannon base and meets the outer wall and staggered p
   assert.equal(l.upper.slots[0].x, l.upper.wallThickness + marbleConfig.upper.row.innerInset);
   const last = l.upper.slots.at(-1);
   assert.ok(Math.abs(last.x + last.width - (l.upper.bounds.width - l.upper.wallThickness)) < 1e-8);
-  for (const slot of l.upper.slots) assert.equal(slot.solids[0][1].y, slot.solids[0][0].y);
+  for (const slot of l.upper.slots) assert.ok(slot.solids[0][1].y > slot.solids[0][0].y);
   for (const m of l.mountains) {
     const overlap = m.position.y + m.height / 2 - l.upper.slots[0].y;
     assert.equal(overlap, 6);
     assert.ok(overlap <= l.mountainOverlap);
   }
   const xs = l.pins.map(p => p.x);
-  assert.equal(Math.min(...xs), 35);
-  assert.equal(Math.max(...xs), 497);
+  assert.equal(Math.min(...xs), 56);
+  assert.equal(Math.max(...xs), 476);
   assert.ok(Math.min(...xs) - l.pinFlow.radius - l.lower.wallThickness > 14);
 });
 

@@ -25,6 +25,8 @@ function movingConfig() {
   const c = structuredClone(physicsConfig);
   // Explicitly exercise the optional legacy obstacle system. Default gameplay disables it.
   c.obstacles.mountains.enabled = true;
+  // Keep the legacy moving needles clear of the lowered cannon spawn.
+  c.obstacles.mountains.motions.forEach(motion => { motion.amplitude = 180; });
   c.spawn.automatic = false;
   return c;
 }
@@ -47,7 +49,7 @@ function advance(sim, seconds) {
     sim.advance(sim.config.simulation.fixedTimeStep);
   }
 }
-function dropInto(sim, id, stage, slotIndex) {
+function dropInto(sim, id, stage, slotIndex, horizontalFraction = 0.5) {
   const team = sim.teams[0];
   const marble = team.marbles.get(id);
   assert.equal(marble.stage, stage);
@@ -57,7 +59,7 @@ function dropInto(sim, id, stage, slotIndex) {
   const slot = device.slots[slotIndex];
   team.physics.remove(id);
   team.physics.add(id, {
-    x: device.bounds.x + slot.x + slot.width / 2,
+    x: device.bounds.x + slot.x + slot.width * horizontalFraction,
     y: device.bounds.y + slot.y - slot.funnelHeight - 10,
   }, { x: 0, y: 180 });
   const before = { ...team.stats };
@@ -146,7 +148,9 @@ test('effect once → ×2 → ×2 → deployment with value 4; bodies and collid
   dropInto(sim, id, 'upper', 1);
   assert.equal(sim.teams[0].marbles.get(id).effectId, 'straight');
   assert.equal(sim.teams[0].physics.world.bodies.len(), 0, 'warp removes the old body');
-  sim.advance(sim.config.simulation.fixedTimeStep);
+  for (let step = 0; step < 600 && sim.teams[0].marbles.get(id).waiting; step++) {
+    sim.advance(sim.config.simulation.fixedTimeStep);
+  }
   const position = sim.teams[0].physics.pose(id);
   const start = sim.teams[0].physics.start('lower');
   assert.ok(Math.hypot(position.x - start.x, position.y - start.y) < 5);
@@ -188,8 +192,9 @@ test('gravity, launch speed, radius and material configuration affect real bodie
   const { sim: first } = await simulation(t, a);
   const { sim: second } = await simulation(t, b);
   const i = first.spawn('red'), j = second.spawn('red');
+  const firstX = first.teams[0].physics.pose(i).x, secondX = second.teams[0].physics.pose(j).x;
   advance(first, 0.1); advance(second, 0.1);
-  assert.ok(second.teams[0].physics.pose(j).x < first.teams[0].physics.pose(i).x - 8);
+  assert.ok(secondX - second.teams[0].physics.pose(j).x > firstX - first.teams[0].physics.pose(i).x + 8);
   assert.ok(second.teams[0].physics.pose(j).y > first.teams[0].physics.pose(i).y + 1);
   const collider = [...second.teams[0].physics.world.bodies.getAll()][0].collider(0);
   assert.ok(Math.abs(collider.radius() * b.simulation.pixelsPerMeter - 6) < 0.001);
@@ -572,6 +577,46 @@ test('Pixi obstacle graphics match shared shapes and poses, and are destroyed wi
   render(team, 1, false);
   const layer = parent.children.find((child) => child.label === 'moving-obstacles');
   const firstGraphics = [...layer.children];
+  const transportedId = sim.spawn('red');
+  dropInto(sim, transportedId, 'upper', 0);
+  sim.advance(c.simulation.fixedTimeStep);
+  render(team, 0.5, false);
+  const transport = team.marbles.get(transportedId).transfer;
+  const { transferPose } = await server.ssrLoadModule('/src/marble/transfer.ts');
+  const expected = transferPose(transport, 0.5);
+  const ballLayer = parent.children.find(child => child.label === 'moving-marbles');
+  assert.equal(ballLayer.children.length, 1);
+  assert.equal(ballLayer.children[0].visible, true);
+  assert.equal(team.physics.pose(transportedId), undefined);
+  assert.ok(Math.hypot(ballLayer.children[0].x - expected.x, ballLayer.children[0].y - expected.y) < 0.001);
+  const valueLabel = ballLayer.children[0].children.find(child => child.label === 'marble-value');
+  assert.equal(valueLabel.text, '1');
+  assert.equal(valueLabel.rotation, 0);
+  assert.ok(valueLabel.y < -c.marble.radius);
+  dropInto(sim, transportedId, 'lower', 0);
+  render(team, 1, false);
+  assert.equal(valueLabel.text, '2');
+  assert.ok(team.marbles.get(transportedId).rerollFrom);
+  assert.equal(ballLayer.children[0].visible, true, 'waiting reroll keeps the updated value visible');
+  for (let step = 0; step < 600 && team.marbles.get(transportedId).waiting; step++) sim.advance(c.simulation.fixedTimeStep);
+  const trail = team.marbles.get(transportedId).rerollTrail;
+  assert.ok(trail);
+  assert.ok(trail.from.y > trail.to.y);
+  assert.deepEqual(trail.to, team.physics.start('lower'));
+  render(team, 1, false);
+  const trailGraphic = parent.children.find(child => child.label === 'reroll-trails');
+  assert.ok(trailGraphic.getLocalBounds().height > 100);
+  advance(sim, c.reroll.trailDuration + 0.1);
+  render(team, 1, false);
+  assert.equal(team.marbles.get(transportedId).rerollTrail, undefined);
+  assert.equal(trailGraphic.getLocalBounds().height, 0);
+  dropInto(sim, transportedId, 'lower', 2, 0.75);
+  render(team, 1, false);
+  assert.equal(valueLabel.text, '6');
+  dropInto(sim, transportedId, 'lower', 1);
+  render(team, 1, false);
+  assert.equal(ballLayer.children.length, 0);
+  assert.equal(valueLabel.destroyed, true);
   for (let frame = 0; frame < 900; frame++) {
     sim.advance(1 / 60);
     render(team, 0.5, false);
@@ -653,5 +698,94 @@ test('all mirrored red holes preserve their original effect actions', async (t) 
     const team = sim.teams[0];
     assert.equal(team.marbles.get(id).effectId, layout.upper.slots[index].definition.action.effectId);
     team.physics.remove(id); team.marbles.delete(id);
+  }
+});
+
+
+test('effect transfer stays visible without a body, follows the gap and resumes at the same endpoint', async (t) => {
+  const { transferPose } = await server.ssrLoadModule('/src/marble/transfer.ts');
+  const { sim, events } = await simulation(t);
+  const team = sim.teams[0];
+  const id = sim.spawn('red');
+  dropInto(sim, id, 'upper', 0);
+  const marble = team.marbles.get(id);
+  const transfer = marble.transfer;
+  assert.ok(transfer);
+  const effectId = marble.effectId;
+  assert.equal(team.physics.pose(id), undefined);
+  assert.ok(layout.lower.bounds.y - (layout.upper.bounds.y + layout.upper.bounds.height) >= 2 * sim.config.marble.radius);
+  assert.equal(transfer.points[1].y, transfer.points[2].y);
+  assert.deepEqual(transfer.points.at(-1), team.physics.start('lower'));
+  let traversedChannel = false;
+  for (let step = 0; step < 600 && marble.transfer; step++) {
+    const before = transferPose(transfer);
+    sim.advance(sim.config.simulation.fixedTimeStep);
+    const after = marble.transfer ? transferPose(transfer) : team.physics.pose(id);
+    assert.ok(Math.hypot(after.x - before.x, after.y - before.y) < 5, 'continuous movement at handoff');
+    if (marble.transfer) {
+      assert.equal(team.physics.pose(id), undefined);
+      if (Math.abs(after.y - transfer.points[1].y) < 0.001) traversedChannel = true;
+    }
+  }
+  assert.ok(traversedChannel);
+  assert.equal(marble.transfer, undefined);
+  assert.equal(marble.waiting, false);
+  assert.equal(marble.effectId, effectId);
+  assert.ok(team.physics.pose(id));
+  assert.equal(events.filter(e => e.type === 'effect').length, 1);
+});
+
+test('transfer waits visibly at an occupied entry and expires without an orphan body', async (t) => {
+  const { transferPose } = await server.ssrLoadModule('/src/marble/transfer.ts');
+  const c = config(); c.gravity.y = 0;
+  const { sim, events } = await simulation(t, c);
+  const team = sim.teams[0];
+  const id = sim.spawn('red');
+  dropInto(sim, id, 'upper', 0);
+  const marble = team.marbles.get(id);
+  const end = team.physics.start('lower');
+  team.physics.add(999, end, { x: 0, y: 0 });
+  advance(sim, 3);
+  assert.ok(marble.transfer);
+  assert.deepEqual(transferPose(marble.transfer), { ...end, angle: 0 });
+  assert.equal(team.physics.pose(id), undefined);
+  marble.age = c.rules.maxLifetime;
+  sim.advance(c.simulation.fixedTimeStep);
+  assert.equal(team.marbles.has(id), false);
+  assert.equal(events.at(-1).reason, 'lifetime-limit');
+  team.physics.remove(999);
+  assert.equal(team.physics.world.bodies.len(), 0);
+});
+
+
+test('balls resting on either shallow trapezoid top roll into a hole without a launch impulse', (t) => {
+  const p = world(t, config(), { ...layout, pins: [] });
+  for (const slot of layout.upper.slots) {
+    const shoulder = (slot.width - slot.openingWidth) / 2;
+    const offset = shoulder * marbleConfig.upper.row.plateau / 2;
+    for (const x of [offset, slot.width - offset]) {
+      p.add(1, { x: layout.upper.bounds.x + slot.x + x,
+        y: layout.upper.bounds.y + slot.y - slot.funnelHeight - physicsConfig.marble.radius - 0.5 }, { x: 0, y: 0 });
+      let arrival;
+      for (let step = 0; step < 1200 && !arrival; step++) arrival = p.step().find(a => a.marbleId === 1);
+      assert.equal(arrival?.stage, 'upper', `shallow top stayed occupied: ${slot.definition.id}/${x}`);
+      p.remove(1);
+    }
+  }
+});
+
+
+test('cannon-side ramps carry resting balls outward into holes on both teams', async (t) => {
+  const { layoutForTeam } = await server.ssrLoadModule('/src/marble/layout.ts');
+  for (const team of ['red', 'blue']) {
+    const geometry = layoutForTeam(layout, team);
+    const p = world(t, config(), { ...geometry, pins: [] });
+    const points = geometry.upper.ramps[0];
+    assert.ok(points);
+    const x = geometry.upper.bounds.x + (team === 'blue' ? 25 : geometry.upper.bounds.width - 25);
+    p.add(1, { x, y: geometry.upper.bounds.y + Math.min(...points.map(p => p.y)) - physicsConfig.marble.radius - 1 }, { x: 0, y: 0 });
+    let arrival;
+    for (let step = 0; step < 1200 && !arrival; step++) arrival = p.step().find(a => a.marbleId === 1);
+    assert.equal(arrival?.stage, 'upper', team);
   }
 });

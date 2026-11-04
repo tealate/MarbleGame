@@ -2,6 +2,7 @@ import { physicsConfig, type PhysicsConfig } from '../config/physics';
 import { teams, type Team, type SlotAction, type Point } from '../config/stage';
 import { layoutForTeam, type MarbleLayout } from './layout';
 import { cannonPose } from './cannon';
+import { createTransfer, type Transfer } from './transfer';
 import { initializePhysics, MarblePhysics, type Stage } from './physics';
 
 export interface MarbleState {
@@ -9,6 +10,9 @@ export interface MarbleState {
   team: Team['id'];
   stage: Stage;
   waiting: boolean;
+  transfer?: Transfer;
+  rerollFrom?: Point;
+  rerollTrail?: { from: Point; to: Point; remaining: number };
   value: number;
   effectId?: string;
   rerolls: number;
@@ -57,6 +61,7 @@ function validate(layout: MarbleLayout, c: PhysicsConfig): void {
   finite(c);
   finite(layout);
   for (const [key, value] of Object.entries({ ...c.simulation, radius: c.marble.radius,
+    transferSpeed: c.transfer.speed, trailDuration: c.reroll.trailDuration,
     density: c.marble.density, maxSpeed: c.marble.maxSpeed, maxFallSpeed: c.marble.maxFallSpeed, interval: c.spawn.interval,
     maxPerTeam: c.spawn.maxPerTeam, batchSize: c.spawn.batchSize, maxLifetime: c.rules.maxLifetime,
     initialValue: c.rules.initialValue, maxValue: c.rules.maxValue })) {
@@ -234,9 +239,28 @@ export class MarbleSimulation {
       // if occupied; waiting marbles still count toward the cap and lifetime.
       for (const marble of team.marbles.values()) {
         marble.age += dt;
+        if (marble.rerollTrail) {
+          marble.rerollTrail.remaining -= dt;
+          if (marble.rerollTrail.remaining <= 0) delete marble.rerollTrail;
+        }
         if (marble.age >= this.config.rules.maxLifetime) {
           this.finish(team, marble, { type: 'retire', marble: { ...marble }, reason: 'lifetime-limit' });
+        } else if (marble.transfer) {
+          const transfer = marble.transfer;
+          transfer.previousDistance = transfer.distance;
+          transfer.distance = Math.min(transfer.length, transfer.distance + this.config.transfer.speed * dt);
+          if (transfer.distance >= transfer.length && team.physics.isStartClear('lower')) {
+            team.physics.add(marble.id, transfer.points[transfer.points.length - 1],
+              this.velocity('lower'));
+            delete marble.transfer;
+            marble.waiting = false;
+          }
         } else if (marble.waiting && team.physics.isStartClear('lower')) {
+          if (marble.rerollFrom) {
+            marble.rerollTrail = { from: marble.rerollFrom, to: team.physics.start('lower'),
+              remaining: this.config.reroll.trailDuration };
+            delete marble.rerollFrom;
+          }
           team.physics.add(marble.id, team.physics.start('lower'), this.velocity('lower'));
           marble.waiting = false;
         }
@@ -259,6 +283,12 @@ export class MarbleSimulation {
         if (!event) continue;
         if (event.type === 'deploy' || event.type === 'retire') this.finish(team, marble, event);
         else {
+          if (event.type === 'effect') {
+            marble.transfer = createTransfer(team.physics.layout, team.physics.pose(marble.id)!);
+          } else {
+            const pose = team.physics.pose(marble.id)!;
+            marble.rerollFrom = { x: pose.x, y: pose.y };
+          }
           team.physics.remove(marble.id);
           if (event.type === 'effect') team.stats.effects++;
           else team.stats.multipliers++;

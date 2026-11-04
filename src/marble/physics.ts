@@ -35,6 +35,13 @@ export class MarblePhysics {
     for (const stage of ['upper', 'lower'] as const) {
       const device = layout[stage];
       for (const wall of device.walls) this.addBox(wall, device.bounds, 'wall');
+      for (const polygon of device.ramps) {
+        const vertices = new Float32Array(polygon.flatMap(p => [p.x / scale, p.y / scale]));
+        const desc = RAPIER.ColliderDesc.convexHull(vertices);
+        if (!desc) throw new Error('Invalid ramp polygon');
+        desc.setTranslation(device.bounds.x / scale, device.bounds.y / scale);
+        this.world.createCollider(this.material(desc, 'funnel'));
+      }
       for (const slot of device.slots) {
         const origin = { x: device.bounds.x + slot.x, y: device.bounds.y + slot.y };
         for (const polygon of slot.solids) {
