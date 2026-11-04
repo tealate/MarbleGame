@@ -88,7 +88,7 @@ test('both teams generate moving marbles in independent worlds', async (t) => {
 test('CCD keeps a fast ball inside the wall and it rebounds', (t) => {
   const c = config(); c.gravity.y = 0;
   const p = world(t, c);
-  p.add(1, { x: 490, y: 130 }, { x: 900, y: 0 });
+  p.add(1, { x: 490, y: 80 }, { x: 900, y: 0 });
   let furthest = 0;
   for (let i = 0; i < 30; i++) { p.step(); furthest = Math.max(furthest, p.pose(1).x); }
   assert.ok(furthest < layout.upper.bounds.x + layout.upper.bounds.width - layout.upper.wallThickness);
@@ -113,8 +113,8 @@ test('a pin rebounds a falling ball', (t) => {
 test('marble-to-marble contact transfers momentum and prevents overlap', (t) => {
   const c = config(); c.gravity.y = 0;
   const p = world(t, c);
-  p.add(1, { x: 200, y: 130 }, { x: 150, y: 0 });
-  p.add(2, { x: 240, y: 130 }, { x: -150, y: 0 });
+  p.add(1, { x: 200, y: 80 }, { x: 150, y: 0 });
+  p.add(2, { x: 240, y: 80 }, { x: -150, y: 0 });
   let smallestGap = Infinity;
   for (let i = 0; i < 45; i++) {
     p.step(); smallestGap = Math.min(smallestGap, p.pose(2).x - p.pose(1).x);
@@ -412,7 +412,7 @@ test('new pin rows keep alternating A/B offsets after the initial rows', (t) => 
 });
 
 test('fall speed cap slows real falling bodies without changing sideways or upward motion', (t) => {
-  const slow = config();
+  const slow = config(); slow.gravity.y = 700; // Fixed reference gravity isolates the speed cap.
   const fast = structuredClone(slow); fast.marble.maxFallSpeed = fast.marble.maxSpeed;
   const geometry = { ...layout, pins: [] };
   const a = world(t, slow, geometry), b = world(t, fast, geometry);
@@ -607,7 +607,7 @@ test('default bowl stage has no needles and completes effect, reroll and deploym
 test('balls roll down the shared bowl shoulders into effect sensors', (t) => {
   const p = world(t, config(), { ...layout, pins: [] });
   for (const [i, slot] of layout.upper.slots.entries()) {
-    p.add(i + 1, { x: layout.upper.bounds.x + slot.x + 7,
+    p.add(i + 1, { x: layout.upper.bounds.x + slot.x + (slot.width - slot.openingWidth) / 2 * 0.8,
       y: layout.upper.bounds.y + slot.y - slot.funnelHeight - 16 }, { x: 0, y: 0 });
     let found;
     for (let step = 0; step < 600 && !found; step++) found = p.step().find(a => a.marbleId === i + 1);

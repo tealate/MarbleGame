@@ -11,7 +11,7 @@ export const physicsConfig = {
     solverIterations: 8,
     maxCcdSubsteps: 4,
   },
-  gravity: { x: 0, y: 700 },
+  gravity: { x: 0, y: 560 },
   marble: {
     radius: 7,
     density: 1,
@@ -49,7 +49,7 @@ export const physicsConfig = {
     },
   },
   launch: {
-    upper: { speedMin: 260, speedMax: 460, angleMin: -25, angleMax: 20, swingPeriod: 3.6 },
+    upper: { speedMin: 220, speedMax: 380, angleMin: -25, angleMax: 20, swingPeriod: 3.6 },
     lower: { speedMin: 170, speedMax: 300, angleMin: 20, angleMax: 160 },
   },
   spawn: {

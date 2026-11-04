@@ -90,10 +90,10 @@ export const palette = {
   pin: 0xd8e4f4,
 };
 
-// Display grouping only: original effect IDs and counts remain unchanged.
+// Display grouping only: effect actions remain unchanged.
 export const upperPresentation = {
-  cannon: { pivotX: 10, pivotY: 43, length: 38, width: 20, hubRadius: 27 },
-  bandY: 64, bandHeight: 48, labelSize: 23,
+  cannon: { pivotX: 10, pivotY: 35, length: 38, width: 20, hubRadius: 24 },
+  bandY: 48, bandHeight: 42, labelSize: 23,
   zones: [
     { label: 'Missile', effects: ['straight'], red: 0xffe84a, blue: 0x983dff },
     { label: 'Shotgun', effects: ['left', 'right'], red: 0x9af526, blue: 0x25e4ed },
@@ -102,9 +102,9 @@ export const upperPresentation = {
 };
 
 export const effectGroups = [
-  { id: 'straight', label: 'S', color: 0xffe84a, count: 7 },
-  { id: 'left', label: 'L', color: 0x25e4ed, count: 2 },
-  { id: 'right', label: 'R', color: 0xf34de2, count: 2 },
+  { id: 'straight', label: 'S', color: 0xffe84a, count: 3 },
+  { id: 'left', label: 'L', color: 0x25e4ed, count: 1 },
+  { id: 'right', label: 'R', color: 0xf34de2, count: 1 },
   { id: 'heal', label: 'H', color: 0x48ee68, count: 2 },
 ];
 export function createEffectSlots(groups = effectGroups): SlotDefinition[] {
@@ -120,22 +120,22 @@ export function createEffectSlots(groups = effectGroups): SlotDefinition[] {
 /** Shared by both teams. Edit here; Vite reloads the layout automatically. */
 export const marbleConfig: MarbleConfig = {
   upper: {
-    x: 4, y: 4, width: 532, height: 160,
+    x: 4, y: 4, width: 532, height: 130,
     title: '01  効果取得',
     wallThickness: 5,
-    start: { x: 58, y: 43, radius: 9, label: '生成地点' },
+    start: { x: 58, y: 35, radius: 9, label: '生成地点' },
     mountainOverlap: 8, // Allowed base overlap into the effect row, in pixels.
     mountains: [
-      { id: 'left', x: 266, y: 111.5, width: 18, height: 51, topWidth: 0 },
-      { id: 'right', x: 266, y: 111.5, width: 18, height: 51, topWidth: 0 },
+      { id: 'left', x: 266, y: 81.5, width: 18, height: 51, topWidth: 0 },
+      { id: 'right', x: 266, y: 81.5, width: 18, height: 51, topWidth: 0 },
     ],
     row: {
-      inset: 0, gap: 0, height: 24, openingWidth: 20, funnelHeight: 6, entrance: 'bowl', bowlSegments: 8, plateau: 0.4, innerInset: 48,
+      inset: 0, gap: 0, height: 24, openingWidth: 20, funnelHeight: 6, entrance: 'bowl', bowlSegments: 8, plateau: 0.5, innerInset: 48,
       slots: createEffectSlots(),
     },
   },
   lower: {
-    x: 4, y: 168, width: 532, height: 408,
+    x: 4, y: 138, width: 532, height: 438,
     title: '02  倍率変更・出撃抽選',
     wallThickness: 5,
     start: { x: 266, y: 26, radius: 10, label: 'ワープ先 / 再抽選' },

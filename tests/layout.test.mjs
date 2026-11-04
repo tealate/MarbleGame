@@ -20,7 +20,7 @@ test('1080×1920 is divided 3:4:3 with two 540×576 team areas', () => {
 
 test('default devices, starts, pins and slots fit inside their local areas', () => {
   const layout = createMarbleLayout(marbleConfig);
-  assert.equal(layout.upper.slots.length, 13);
+  assert.equal(layout.upper.slots.length, 7);
   assert.equal(layout.lower.slots.length, 5);
   assert.equal(layout.pins.length, 67);
   assert.equal(540 - layout.lower.bounds.width, 8, 'central gap is 8px');
@@ -78,7 +78,7 @@ test('dimensions, openings, slots, starts and pin settings change generated geom
   assert.equal(layout.upper.bounds.width, 480);
   assert.equal(layout.upper.walls[0].height, 8);
   assert.equal(layout.upper.start.x, 95);
-  assert.equal(layout.upper.slots.length, 14);
+  assert.equal(layout.upper.slots.length, 8);
   assert.equal(layout.upper.slots[0].width, 80);
   assert.equal(layout.upper.slots[0].height, 30);
   assert.equal(layout.upper.slots[0].openingWidth, 18);
@@ -150,14 +150,14 @@ test('bowl row reserves the cannon base and meets the outer wall and staggered p
 });
 
 
-test('effect groups generate editable S7 L2 R2 H2 counts with unique slot IDs', async () => {
+test('effect groups generate editable S3 L1 R1 H2 counts with unique slot IDs', async () => {
   const { createEffectSlots, effectGroups } = await server.ssrLoadModule('/src/config/stage.ts');
   const slots = createEffectSlots();
-  assert.equal(slots.map(s => s.label).join(''), 'SSSSSSSLLRRHH');
-  assert.equal(new Set(slots.map(s => s.id)).size, 13);
+  assert.equal(slots.map(s => s.label).join(''), 'SSSLRHH');
+  assert.equal(new Set(slots.map(s => s.id)).size, 7);
   assert.deepEqual(effectGroups.map(g => g.color), [0xffe84a, 0x25e4ed, 0xf34de2, 0x48ee68]);
   const groups = structuredClone(effectGroups); groups[0].count = 4;
-  assert.equal(createEffectSlots(groups).length, 10);
+  assert.equal(createEffectSlots(groups).length, 8);
   const modified = structuredClone(marbleConfig);
   modified.upper.row.slots = createEffectSlots(groups);
   modified.upper.row.funnelHeight = 4;
