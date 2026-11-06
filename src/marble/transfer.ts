@@ -1,8 +1,9 @@
 import { deployPresentation, type Point, type Team } from '../config/stage';
-import type { MarbleLayout } from './layout';
+import { createScreenLayout, type MarbleLayout } from './layout';
+import { battleCannonPose } from './cannon';
 
 export interface Transfer {
-  target: 'lower-start' | 'cannon';
+  target: 'lower-start' | 'battle-cannon';
   points: Point[];
   distance: number;
   previousDistance: number;
@@ -17,16 +18,20 @@ export function createTransfer(layout: MarbleLayout, from: Point): Transfer {
   return fromPoints(points, 'lower-start');
 }
 
-/** Shared by route rendering and nonphysical travel; end is the cannon pivot. */
-export function createDeployTransfer(layout: MarbleLayout, team: Team['id'], from: Point, end: Point): Transfer {
+/** Route and ball share team-local coordinates, including negative y in battle.
+ * The unmasked team container adds its screen origin to both at render time. */
+export function createDeployTransfer(layout: MarbleLayout, team: Team['id'], from: Point): Transfer {
   const c = deployPresentation;
+  const { marble, teamWidth } = createScreenLayout();
+  const globalEnd = battleCannonPose(team).pivot;
+  const end = { x: globalEnd.x - marble.x - (team === 'blue' ? teamWidth : 0),
+    y: globalEnd.y - marble.y };
   const bottom = layout.lower.bounds.y + layout.lower.bounds.height + c.bottomOffset;
   const outer = team === 'red'
     ? Math.min(layout.upper.bounds.x, layout.lower.bounds.x) - c.outerOffset
     : Math.max(layout.upper.bounds.x + layout.upper.bounds.width, layout.lower.bounds.x + layout.lower.bounds.width) + c.outerOffset;
-  const top = layout.upper.bounds.y - c.topOffset;
   return fromPoints([{ x: from.x, y: from.y }, { x: from.x, y: bottom },
-    { x: outer, y: bottom }, { x: outer, y: top }, { x: end.x, y: top }, { ...end }], 'cannon');
+    { x: outer, y: bottom }, { x: outer, y: end.y }, end], 'battle-cannon');
 }
 
 function fromPoints(points: Point[], target: Transfer['target']): Transfer {

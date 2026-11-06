@@ -25,8 +25,8 @@ function movingConfig() {
   const c = structuredClone(physicsConfig);
   // Explicitly exercise the optional legacy obstacle system. Default gameplay disables it.
   c.obstacles.mountains.enabled = true;
-  // Keep the legacy moving needles clear of the lowered cannon spawn.
-  c.obstacles.mountains.motions.forEach(motion => { motion.amplitude = 180; });
+  // Keep the legacy moving needles clear of the current upper start markers.
+  c.obstacles.mountains.motions.forEach(motion => { motion.amplitude = 170; });
   c.spawn.automatic = false;
   return c;
 }
@@ -161,11 +161,15 @@ test('effect once → ×2 → ×2 → deployment with value 4; bodies and collid
   assert.deepEqual(events.map((e) => e.type), ['effect', 'multiplier', 'multiplier', 'deploy']);
   assert.equal(events.at(-1).marble.value, 4);
   assert.equal(events.at(-1).marble.effectId, 'straight');
-  assert.equal(sim.teams[0].marbles.size, 0);
+  assert.equal(sim.teams[0].marbles.get(id).transfer.target, 'battle-cannon');
   assert.equal(sim.teams[0].physics.world.bodies.len(), 0);
   assert.equal(sim.teams[0].physics.world.colliders.len(), baseline);
-  advance(sim, 0.5);
-  assert.equal(events.length, 4, 'old contacts cannot fire after warp or disposal');
+  for (let step = 0; step < 1200 && sim.teams[0].marbles.has(id); step++) {
+    sim.advance(sim.config.simulation.fixedTimeStep);
+  }
+  assert.equal(sim.teams[0].marbles.size, 0);
+  assert.deepEqual(events.map((e) => e.type), ['effect', 'multiplier', 'multiplier', 'deploy', 'cannon-arrival']);
+  assert.equal(sim.teams[0].physics.world.bodies.len(), 0, 'old contacts cannot fire after transfer');
 });
 
 test('rule state rejects duplicate effects and waiting contacts; rerolls and values are bounded', () => {
@@ -578,7 +582,7 @@ test('Pixi obstacle graphics match shared shapes and poses, and are destroyed wi
   const layer = parent.children.find((child) => child.label === 'moving-obstacles');
   const firstGraphics = [...layer.children];
   const transportedId = sim.spawn('red');
-  dropInto(sim, transportedId, 'upper', 0);
+  dropInto(sim, transportedId, 'upper', 2);
   sim.advance(c.simulation.fixedTimeStep);
   render(team, 0.5, false);
   const transport = team.marbles.get(transportedId).transfer;
@@ -615,13 +619,14 @@ test('Pixi obstacle graphics match shared shapes and poses, and are destroyed wi
   assert.equal(valueLabel.text, '6');
   dropInto(sim, transportedId, 'lower', 1);
   render(team, 1, false);
-  assert.equal(ballLayer.children.length, 0);
-  assert.equal(valueLabel.destroyed, true);
+  assert.equal(team.marbles.get(transportedId).transfer.target, 'battle-cannon');
   for (let frame = 0; frame < 900; frame++) {
     sim.advance(1 / 60);
     render(team, 0.5, false);
     assert.equal(layer.children.length, team.physics.obstacles.items.size);
   }
+  assert.equal(ballLayer.children.length, 0);
+  assert.equal(valueLabel.destroyed, true);
   assert.ok(firstGraphics.slice(2).every((graphic) => graphic.destroyed));
   const records = [...team.physics.obstacles.items.values()];
   layer.children.forEach((graphic, i) => {

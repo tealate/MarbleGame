@@ -1,10 +1,10 @@
 import { Assets, Container, Graphics, Sprite, Text, type Texture } from 'pixi.js';
-import { palette, upperPresentation, marblePresentation, effectPresentation, defaultEffectPresentation,
+import { palette, battlePresentation, upperPresentation, marblePresentation, effectPresentation, defaultEffectPresentation,
   deployPresentation, type Team } from '../config/stage';
 import type { DeviceLayout, MarbleLayout, SlotLayout } from './layout';
 import type { PhysicsConfig } from '../config/physics';
 import type { TeamSimulation } from './simulation';
-import { cannonPivot, cannonPose } from './cannon';
+import { battleCannonPose, cannonPose } from './cannon';
 import { createDeployTransfer, transferPose } from './transfer';
 
 export function label(text: string, x: number, y: number, size: number, color = palette.text): Text {
@@ -15,6 +15,26 @@ export function label(text: string, x: number, y: number, size: number, color = 
   item.anchor.set(0.5);
   item.position.set(x, y);
   return item;
+}
+
+/** Decorative battle cannon only: no physical body, aiming timer or firing. */
+export function createBattleCannon(team: Team): Container {
+  const c = battlePresentation;
+  const pose = battleCannonPose(team.id);
+  const view = new Container({ label: `battle-cannon-${team.id}` });
+  view.position.set(pose.pivot.x, pose.pivot.y);
+  view.scale.set(pose.scale);
+  const base = new Graphics()
+    .roundRect(-c.baseWidth / 2, c.hubRadius / 2, c.baseWidth, c.baseHeight, 5).fill(palette.wall);
+  const barrel = new Graphics()
+    .roundRect(0, -c.barrelWidth / 2, c.barrelLength, c.barrelWidth, 5).fill(team.color)
+    .rect(c.barrelLength - 8, -c.barrelWidth / 2 - 3, 8, c.barrelWidth + 6).fill(palette.wall)
+    .rect(c.barrelLength - 3, -c.barrelWidth / 2 + 4, 3, c.barrelWidth - 8).fill(palette.device);
+  barrel.rotation = pose.angle;
+  const hub = new Graphics().circle(0, 0, c.hubRadius).fill(team.color)
+    .circle(0, 0, c.hubRadius * 0.55).fill(palette.wall);
+  view.addChild(base, barrel, hub);
+  return view;
 }
 
 function drawSlot(slot: SlotLayout, effectColor?: number): Container {
@@ -89,7 +109,7 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
     if (slot.definition.action.kind !== 'deploy') continue;
     const from = { x: layout.lower.bounds.x + slot.x + slot.width / 2,
       y: layout.lower.bounds.y + layout.lower.bounds.height };
-    const route = createDeployTransfer(layout, team.id, from, cannonPivot(layout.upper, team.id));
+    const route = createDeployTransfer(layout, team.id, from);
     for (const [width, color] of [[deployPresentation.width + 2, palette.line],
       [deployPresentation.width, palette.panel], [1, team.color]]) {
       returnChannel.moveTo(route.points[0].x, route.points[0].y);
@@ -137,9 +157,6 @@ export function createMarbleTeam(layout: MarbleLayout, team: Team, width: number
       slot.width, layout.lower.wallThickness + deployPresentation.bottomOffset + deployPresentation.width / 2)
       .fill(palette.panel);
   }
-  const pivot = cannonPivot(layout.upper, team.id);
-  openings.moveTo(pivot.x, layout.upper.bounds.y - deployPresentation.topOffset)
-    .lineTo(pivot.x, pivot.y).stroke({ width: deployPresentation.width, color: palette.panel });
   view.addChild(openings);
   return view;
 }

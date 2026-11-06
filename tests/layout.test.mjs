@@ -23,8 +23,8 @@ test('default devices, starts, pins and slots fit inside their local areas', () 
   assert.equal(layout.upper.slots.length, 7);
   assert.equal(layout.lower.slots.length, 5);
   assert.equal(layout.pins.length, 38);
-  assert.equal(540 - layout.lower.bounds.width, 8, 'central gap is 8px');
-  assert.equal(layout.lower.bounds.y + layout.lower.bounds.height, 576, 'device reaches screen bottom');
+  assert.equal(540 - layout.lower.bounds.width, 40, 'lower device leaves space at the center');
+  assert.equal(layout.lower.bounds.y + layout.lower.bounds.height, 520, 'device ends within the marble area');
   assert.equal(layout.pinFlow.spawnY + layout.pinFlow.radius, layout.lower.bounds.height - 6);
   for (const device of [layout.upper, layout.lower]) {
     const { bounds, start, wallThickness: wall } = device;
@@ -33,7 +33,7 @@ test('default devices, starts, pins and slots fit inside their local areas', () 
     assert.ok(start.x - start.radius > wall && start.x + start.radius < bounds.width - wall);
     assert.ok(start.y - start.radius > wall);
     for (const slot of device.slots) {
-      assert.ok(slot.x >= wall && slot.x + slot.width <= bounds.width - wall);
+      assert.ok(slot.x >= wall - 1e-8 && slot.x + slot.width <= bounds.width - wall + 1e-8);
       assert.ok(slot.y - slot.funnelHeight > start.y + start.radius);
       assert.equal(slot.y + slot.height, bounds.height - wall);
       assert.ok(slot.openingWidth <= slot.width);
@@ -144,8 +144,8 @@ test('bowl row reserves the cannon base and meets the outer wall and staggered p
     assert.ok(overlap <= l.mountainOverlap);
   }
   const xs = l.pins.map(p => p.x);
-  assert.equal(Math.min(...xs), 56);
-  assert.equal(Math.max(...xs), 476);
+  assert.equal(Math.min(...xs), 60);
+  assert.equal(Math.max(...xs), 440);
   assert.ok(Math.min(...xs) - l.pinFlow.radius - l.lower.wallThickness > 14);
 });
 

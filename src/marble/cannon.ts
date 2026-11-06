@@ -1,6 +1,14 @@
-import { upperPresentation, type Team } from '../config/stage';
+import { battlePresentation, upperPresentation, type Team } from '../config/stage';
 import type { PhysicsConfig } from '../config/physics';
-import type { DeviceLayout } from './layout';
+import { createScreenLayout, type DeviceLayout } from './layout';
+
+/** Battle cannon in logical screen coordinates, independent of marble launchers. */
+export function battleCannonPose(team: Team['id']) {
+  const { battle } = createScreenLayout();
+  const c = battlePresentation.cannons[team];
+  return { pivot: { x: battle.x + c.x, y: battle.y + c.y },
+    angle: c.angle * Math.PI / 180, scale: c.scale };
+}
 
 export function cannonPivot(device: DeviceLayout, team: Team['id']) {
   const c = upperPresentation.cannon;

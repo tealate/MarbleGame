@@ -250,9 +250,9 @@ export class MarbleSimulation {
         } else if (marble.transfer) {
           const transfer = marble.transfer;
           transfer.previousDistance = transfer.distance;
-          const speed = transfer.target === 'cannon' ? this.config.transfer.deploySpeed : this.config.transfer.speed;
+          const speed = transfer.target === 'battle-cannon' ? this.config.transfer.deploySpeed : this.config.transfer.speed;
           transfer.distance = Math.min(transfer.length, transfer.distance + speed * dt);
-          if (transfer.distance >= transfer.length && transfer.target === 'cannon') {
+          if (transfer.distance >= transfer.length && transfer.target === 'battle-cannon') {
             this.finish(team, marble, { type: 'cannon-arrival', marble: { ...marble } });
           } else if (transfer.distance >= transfer.length && team.physics.isStartClear('lower')) {
             team.physics.add(marble.id, transfer.points[transfer.points.length - 1],
@@ -287,8 +287,7 @@ export class MarbleSimulation {
         const event = applySlot(marble, arrival.slot.definition.action, this.config);
         if (!event) continue;
         if (event.type === 'deploy') {
-          marble.transfer = createDeployTransfer(team.physics.layout, marble.team, team.physics.pose(marble.id)!,
-            cannonPose(team.physics.layout.upper, marble.team, this.time, this.config).pivot);
+          marble.transfer = createDeployTransfer(team.physics.layout, marble.team, team.physics.pose(marble.id)!);
           delete marble.rerollTrail;
           team.physics.remove(marble.id);
           team.stats.deployed++;

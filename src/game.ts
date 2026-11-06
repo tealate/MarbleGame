@@ -1,15 +1,20 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { marbleConfig, palette, teams, upperPresentation } from './config/stage';
 import { createMarbleLayout, createScreenLayout } from './marble/layout';
-import { createMarbleRenderer, createMarbleTeam, label } from './marble/render';
+import { createBattleCannon, createMarbleRenderer, createMarbleTeam, label } from './marble/render';
 import { MarbleSimulation, type MarbleEvent } from './marble/simulation';
 import { physicsConfig } from './config/physics';
+import { BattleSimulation } from './battle/simulation';
+import { createBattleRenderer } from './battle/render';
+import { addBattleDebug } from './battle/debug';
 
 export async function createGameScreen(app: Application) {
   const layout = createMarbleLayout(marbleConfig);
   let lastEvent = '待機中';
+  const combat = new BattleSimulation();
   const simulation = await MarbleSimulation.create(layout, physicsConfig, (event: MarbleEvent) => {
     const m = event.marble;
+    if (event.type === 'cannon-arrival') combat.arrival(m.team);
     lastEvent = `${m.team} #${m.id} ${event.type} 値=${m.value} 効果=${m.effectId ?? '-'}${event.reason ? ` (${event.reason})` : ''}`;
     if (event.type === 'deploy' || event.type === 'cannon-arrival' || event.type === 'retire' || physicsConfig.debug.logTransitions) {
       console.info(`[marble:${event.type}]`, { team: m.team, id: m.id, value: m.value,
@@ -29,10 +34,9 @@ export async function createGameScreen(app: Application) {
     .circle(stream.width / 2 + 24, stream.height / 2, 12).fill(teams[1].color));
 
   const battleCenter = battle.y + battle.height / 2;
-  app.stage.addChild(new Graphics()
-    .circle(battle.width * 0.25, battleCenter, 24).fill(teams[0].color)
-    .circle(battle.width * 0.75, battleCenter, 24).fill(teams[1].color));
   app.stage.addChild(label('VS', battle.width / 2, battleCenter, 38, palette.muted));
+  const combatRenderer = createBattleRenderer(combat);
+  app.stage.addChild(combatRenderer.view);
 
   const marbleView = new Container({ label: 'marble-zone' });
   marbleView.position.set(marble.x, marble.y);
@@ -56,18 +60,24 @@ export async function createGameScreen(app: Application) {
     housing.poly(points).fill(team.color);
   });
   marbleView.addChild(housing);
-  app.stage.addChild(marbleView);
   app.stage.addChild(new Graphics()
     .moveTo(0, battle.y).lineTo(battle.width, battle.y)
     .moveTo(0, marble.y).lineTo(marble.width, marble.y)
+    .stroke({ width: 2, color: palette.line }));
+  // No zone mask: team-local routes and balls extend upward into battle.
+  // Draw over the zone divider so the conveyor is continuous at the boundary.
+  app.stage.addChild(marbleView);
+  app.stage.addChild(new Graphics()
     .moveTo(teamWidth, marble.y + layout.lower.bounds.y).lineTo(teamWidth, marble.y + marble.height)
     .stroke({ width: 2, color: palette.line }));
+  teams.forEach(team => app.stage.addChild(createBattleCannon(team)));
 
   // Opt-in diagnostics keep the normal game layout unchanged.
   let paused = false;
   let showColliders = physicsConfig.debug.showColliders;
   let panel: HTMLDivElement | undefined;
   let status: HTMLPreElement | undefined;
+  let updateBattleDebug: (() => void) | undefined;
   if (new URLSearchParams(window.location.search).has('debug')) {
     panel = document.createElement('div');
     panel.className = 'debug-panel';
@@ -85,16 +95,24 @@ export async function createGameScreen(app: Application) {
       simulation.resetClock();
       pauseButton.textContent = paused ? '再開' : '一時停止';
     });
-    button('1ステップ', () => { if (paused) simulation.advance(simulation.config.simulation.fixedTimeStep); });
+    button('1ステップ', () => {
+      if (paused) {
+        simulation.advance(simulation.config.simulation.fixedTimeStep);
+        combat.advance(simulation.config.simulation.fixedTimeStep);
+      }
+    });
     button('当たり判定', () => { showColliders = !showColliders; });
     status = document.createElement('pre');
     panel.appendChild(status);
+    updateBattleDebug = addBattleDebug(panel, combat);
     document.body.appendChild(panel);
   }
   return {
     simulation,
     update(seconds: number) {
-      if (!paused) simulation.advance(seconds);
+      if (!paused) { simulation.advance(seconds); combat.advance(seconds); }
+      combatRenderer.render();
+      updateBattleDebug?.();
       renderers.forEach((render, i) => render(simulation.teams[i], paused ? 1 : simulation.alpha, showColliders, simulation.time));
       if (status) {
         const text = simulation.teams.map((team, i) => {
@@ -106,6 +124,6 @@ export async function createGameScreen(app: Application) {
         if (status.textContent !== text) status.textContent = text;
       }
     },
-    dispose() { panel?.remove(); simulation.dispose(); },
+    dispose() { panel?.remove(); combatRenderer.dispose(); combat.dispose(); simulation.dispose(); },
   };
 }

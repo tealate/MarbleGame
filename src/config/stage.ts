@@ -116,7 +116,19 @@ export const effectPresentation: Record<string, { color: number; ringWidth: numb
 export const defaultEffectPresentation = { color: 0xffffff, ringWidth: 3 };
 
 // 装置外周から通路中心までの距離と幅（px）。左右は陣営別に自動反転。
-export const deployPresentation = { width: 24, outerOffset: 18, bottomOffset: 18, topOffset: 18 };
+export const deployPresentation = { width: 24, outerOffset: 18, bottomOffset: 18 };
+
+// 戦闘用の仮大砲。上段の球生成用 upperPresentation.cannon とは独立。
+// x/y=戦闘ゾーン左上からのpx、angle=度（0=右、180=左）、scale=全体倍率。
+// 通路の横接続位置は各大砲のx/yに追従する。
+export const battlePresentation = {
+  cannons: {
+    red: { x: 270, y: 384, angle: 0, scale: 0.65 },
+    blue: { x: 810, y: 384, angle: 180, scale: 0.65 },
+  },
+  barrelLength: 70, barrelWidth: 34, hubRadius: 28,
+  baseWidth: 84, baseHeight: 20, // サイズは拡大前のpx。
+};
 
 // 上段の表示設定。ゾーン名・色の変更は、内部の効果処理には影響しない。
 export const upperPresentation = {
