@@ -17,8 +17,8 @@ export function label(text: string, x: number, y: number, size: number, color = 
   return item;
 }
 
-/** Decorative battle cannon only: no physical body, aiming timer or firing. */
-export function createBattleCannon(team: Team): Container {
+/** Drawn barrel is updated from the battle simulation pose. */
+export function createBattleCannon(team: Team) {
   const c = battlePresentation;
   const pose = battleCannonPose(team.id);
   const view = new Container({ label: `battle-cannon-${team.id}` });
@@ -34,7 +34,7 @@ export function createBattleCannon(team: Team): Container {
   const hub = new Graphics().circle(0, 0, c.hubRadius).fill(team.color)
     .circle(0, 0, c.hubRadius * 0.55).fill(palette.wall);
   view.addChild(base, barrel, hub);
-  return view;
+  return { view, render: (angle: number) => { barrel.rotation = angle; } };
 }
 
 function drawSlot(slot: SlotLayout, effectColor?: number): Container {
@@ -85,10 +85,23 @@ function drawDevice(device: DeviceLayout, team: Team, isLower: boolean): Contain
       const right = Math.max(...slots.map(s => s.x + s.width));
       const color = zone[team.id];
       graphics.rect(left, upperPresentation.bandY, right - left, upperPresentation.bandHeight).fill({ color, alpha: 0.12 });
-      const title = label(zone.label, (left + right) / 2, upperPresentation.bandY + upperPresentation.bandHeight / 2,
+      const title = label(zone.label, (left + right) / 2, upperPresentation.bandY + upperPresentation.bandHeight * 0.78,
         upperPresentation.labelSize, color);
-      title.scale.set(Math.min(1, (right - left - 8) / title.width));
+      title.scale.set(Math.min(1, (right - left - 8) / title.width, upperPresentation.bandHeight * 0.4 / title.height));
       view.addChild(title);
+      const path = effectPresentation[zone.effects[0]]?.icon;
+      if (path) {
+        const url = /^(?:[a-z]+:|\/)/i.test(path) ? path : `${import.meta.env.BASE_URL}${path}`;
+        void Assets.load<Texture>(url).then(texture => {
+          if (view.destroyed) return;
+          const icon = new Sprite(texture);
+          icon.anchor.set(0.5);
+          icon.position.set((left + right) / 2, upperPresentation.bandY + upperPresentation.bandHeight * 0.27);
+          icon.scale.set(Math.min(18, right - left - 8) / Math.max(texture.width, texture.height));
+          icon.tint = color;
+          view.addChild(icon);
+        }).catch(() => { /* The label remains available if the icon cannot load. */ });
+      }
     }
   }
   device.slots.forEach((slot) => {

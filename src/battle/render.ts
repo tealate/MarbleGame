@@ -1,3 +1,4 @@
+import { effects } from '../config/effects';
 import { Container, Graphics } from 'pixi.js';
 import { battleConfig, type MaterialStyle } from '../config/battle';
 import { palette, teams } from '../config/stage';
@@ -31,6 +32,11 @@ function drawSegment(g: Graphics, ring: number, slot: number, wall: WallSegment)
     line([-length, -width / 2], [0, -width / 3], [length, -width / 2]);
     line([-length, width / 2], [length, width / 2]);
     line([length / 3, -width], [length / 3, width]);
+  } else if (material.pattern === 'soil') {
+    for (const [u, v] of [[-length / 2, -width / 2], [length / 3, width / 2], [length / 2, -width / 2]]) {
+      const p = point(u, v);
+      g.circle(p.x, p.y, 1.2).fill(material.detailColor);
+    }
   } else if (material.pattern === 'blocks') {
     line([-length, 0], [length, 0]);
     line([0, -width], [0, 0]);
@@ -74,9 +80,16 @@ export function createBattleRenderer(simulation: BattleSimulation) {
     });
     moving.clear();
     for (const ball of simulation.projectiles) {
-      const color = ball.kind === 'defense' ? battleConfig.materials[ball.material].color : 0xffce75;
+      const color = effects[ball.effectId].color;
       moving.circle(ball.x, ball.y, ball.radius).fill(color);
       moving.circle(ball.x, ball.y, ball.radius * 0.4).fill(ball.kind === 'attack' ? palette.device : 0xffffff);
+    }
+    for (const explosion of simulation.explosions) {
+      const config = battleConfig.attack.explosion;
+      const progress = explosion.age / config.duration;
+      moving.circle(explosion.x, explosion.y, explosion.radius * (0.3 + progress * 0.7))
+        .fill({ color: config.color, alpha: (1 - progress) * 0.25 })
+        .stroke({ width: 3, color: config.color, alpha: 1 - progress });
     }
     for (const flash of simulation.flashes) {
       moving.circle(flash.x, flash.y, 4 + flash.age * 40)

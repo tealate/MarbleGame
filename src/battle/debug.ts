@@ -1,3 +1,4 @@
+import { effects, type AttackEffect } from '../config/effects';
 import { battleConfig, type DefenseMaterial } from '../config/battle';
 import { BattleSimulation } from './simulation';
 
@@ -19,7 +20,9 @@ export function addBattleDebug(panel: HTMLElement, battle: BattleSimulation): ()
   };
   select('陣営', [['red', '赤'], ['blue', '青']], value => { battle.selectedTeam = value as 'red' | 'blue'; });
   select('素材', Object.entries(battleConfig.materials).map(([id, m]) => [id, m.label]), value => { battle.selectedMaterial = value as DefenseMaterial; });
-  const direction = select('方向', [['random', 'ランダム'], ['fixed', '固定角度']], value => { battle.direction = value as 'random' | 'fixed'; });
+  select('攻撃', Object.entries(effects).filter(([, effect]) => effect.kind === 'attack').map(([id, effect]) => [id, effect.label]),
+    value => { battle.selectedAttack = value as AttackEffect; });
+  const direction = select('方向', [['swing', '砲身の首振り'], ['fixed', '固定角度']], value => { battle.direction = value as 'swing' | 'fixed'; });
   direction.value = battle.direction;
   const angleLabel = document.createElement('label');
   angleLabel.textContent = '角度° ';
@@ -42,9 +45,10 @@ export function addBattleDebug(panel: HTMLElement, battle: BattleSimulation): ()
   const auto = document.createElement('input');
   auto.type = 'checkbox';
   auto.addEventListener('change', () => { battle.autoFire = auto.checked; });
-  autoLabel.append(auto, ' 防御連射');
+  autoLabel.append(auto, ' 連射');
   controls.appendChild(autoLabel);
-  button('通常攻撃', () => battle.fireAttack());
+  select('連射対象', [['defense', '防御'], ['attack', '攻撃']], value => { battle.autoFireKind = value as 'defense' | 'attack'; });
+  button('攻撃弾を発射', () => battle.fireAttack());
   button('防壁リセット', () => { battle.reset(); auto.checked = false; });
   button('防壁を空にする', () => { battle.reset(true); auto.checked = false; });
   const status = document.createElement('pre');
@@ -53,7 +57,7 @@ export function addBattleDebug(panel: HTMLElement, battle: BattleSimulation): ()
   return () => {
     status.textContent = battle.teams.map(team => {
       const s = team.stats;
-      return `${team.id === 'red' ? '赤' : '青'} 壁=${team.walls.flat().filter(Boolean).length} 建築=${s.built} 補強=${s.repaired} 無駄撃ち=${s.wasted} 被弾=${s.hits} 破壊=${s.destroyed} 運搬到着=${team.arrivals}`;
+      return `${team.id === 'red' ? '赤' : '青'} 壁=${team.walls.flat().filter(Boolean).length} 建築=${s.built} 補強=${s.repaired} 無駄撃ち=${s.wasted} 被弾=${s.hits} 破壊=${s.destroyed} 運搬到着=${team.arrivals} 砲身=${(battle.cannonPose(team.id).angle * 180 / Math.PI).toFixed(1)}°`;
     }).join('\n');
   };
 }

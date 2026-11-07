@@ -14,7 +14,7 @@ export async function createGameScreen(app: Application) {
   const combat = new BattleSimulation();
   const simulation = await MarbleSimulation.create(layout, physicsConfig, (event: MarbleEvent) => {
     const m = event.marble;
-    if (event.type === 'cannon-arrival') combat.arrival(m.team);
+    if (event.type === 'cannon-arrival') combat.arrival(m.team, m.effectId, m.value, m.id);
     lastEvent = `${m.team} #${m.id} ${event.type} 値=${m.value} 効果=${m.effectId ?? '-'}${event.reason ? ` (${event.reason})` : ''}`;
     if (event.type === 'deploy' || event.type === 'cannon-arrival' || event.type === 'retire' || physicsConfig.debug.logTransitions) {
       console.info(`[marble:${event.type}]`, { team: m.team, id: m.id, value: m.value,
@@ -70,7 +70,12 @@ export async function createGameScreen(app: Application) {
   app.stage.addChild(new Graphics()
     .moveTo(teamWidth, marble.y + layout.lower.bounds.y).lineTo(teamWidth, marble.y + marble.height)
     .stroke({ width: 2, color: palette.line }));
-  teams.forEach(team => app.stage.addChild(createBattleCannon(team)));
+  const battleCannons = teams.map(team => {
+    const cannon = createBattleCannon(team);
+    cannon.render(combat.cannonPose(team.id).angle);
+    app.stage.addChild(cannon.view);
+    return cannon;
+  });
 
   // Opt-in diagnostics keep the normal game layout unchanged.
   let paused = false;
@@ -111,6 +116,7 @@ export async function createGameScreen(app: Application) {
     simulation,
     update(seconds: number) {
       if (!paused) { simulation.advance(seconds); combat.advance(seconds); }
+      battleCannons.forEach((cannon, i) => cannon.render(combat.cannonPose(teams[i].id).angle));
       combatRenderer.render();
       updateBattleDebug?.();
       renderers.forEach((render, i) => render(simulation.teams[i], paused ? 1 : simulation.alpha, showColliders, simulation.time));

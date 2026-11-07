@@ -1,3 +1,5 @@
+import { effects } from './effects';
+
 /** 配置・表示の調整用設定。距離は論理px（画面拡大率とは別）。xは右、yは下が正。 */
 export interface Point { x: number; y: number }
 export interface Rect extends Point { width: number; height: number }
@@ -107,12 +109,9 @@ export const marblePresentation = {
 };
 
 // public/ 内の画像を BASE_URL 相対で指定。未設定・読込失敗時は色付き図形。
-export const effectPresentation: Record<string, { color: number; ringWidth: number; icon?: string }> = {
-  straight: { color: 0xffe84a, ringWidth: 3, icon: 'icons/straight.svg' },
-  left: { color: 0x25e4ed, ringWidth: 3, icon: 'icons/left.svg' },
-  right: { color: 0xf34de2, ringWidth: 3, icon: 'icons/right.svg' },
-  heal: { color: 0x48ee68, ringWidth: 3, icon: 'icons/heal.svg' },
-};
+export const effectPresentation: Record<string, { color: number; ringWidth: number; icon?: string }> =
+  Object.fromEntries(Object.entries(effects).map(([id, effect]) =>
+    [id, { color: effect.color, ringWidth: 3, icon: `icons/${id}.svg` }]));
 export const defaultEffectPresentation = { color: 0xffffff, ringWidth: 3 };
 
 // 装置外周から通路中心までの距離と幅（px）。左右は陣営別に自動反転。
@@ -138,21 +137,16 @@ export const upperPresentation = {
   bandHeight: 42, // 帯の高さ（px）。
   labelSize: 25, // 効果名の基本文字サイズ（px）。ゾーン幅に合わせて縮小される。
   // label=表示名、effects=まとめて表示する効果ID、red/blue=陣営別の穴・文字色。
-  zones: [
-    { label: 'Missile', effects: ['straight'], red: 0xffe84a, blue: 0x983dff },
-    { label: 'Shotgun', effects: ['left', 'right'], red: 0x9af526, blue: 0x25e4ed },
-    { label: 'Gatling', effects: ['heal'], red: 0xff941f, blue: 0x2692ff },
-  ],
+  zones: Object.entries(effects).map(([id, effect]) => ({
+    label: effect.label, effects: [id], red: effect.color, blue: effect.color,
+  })),
 };
 
 // id=内部効果ID、label=元の短縮名、color=基本色、count=片側の穴数。
 // countを減らすと同じ装置幅の中でガイドが広がる。並びは中央から外側へ。
-export const effectGroups = [
-  { id: 'straight', label: 'S', color: 0xffe84a, count: 3 },
-  { id: 'left', label: 'L', color: 0x25e4ed, count: 1 },
-  { id: 'right', label: 'R', color: 0xf34de2, count: 1 },
-  { id: 'heal', label: 'H', color: 0x48ee68, count: 2 },
-];
+export const effectGroups = Object.entries(effects).map(([id, effect]) => ({
+  id, label: effect.label, color: effect.color, count: 1,
+}));
 export function createEffectSlots(groups = effectGroups): SlotDefinition[] {
   return groups.flatMap(group => {
     if (!Number.isInteger(group.count) || group.count < 0) throw new Error(`Invalid effect count: ${group.id}`);
